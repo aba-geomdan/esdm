@@ -132,6 +132,23 @@ function deepFixJosa(obj) {
   return obj;
 }
 
+// 한국 이름에서 성을 떼어 부르는 이름만 반환 (3글자면 성 1자 제거)
+// 예: "민다솔"→"다솔", "김서연"→"서연", "이안"→"안"(2자는 그대로), "다솔"→"다솔"
+function givenName(full) {
+  const n = (full || "").trim();
+  if (!n) return "";
+  // 한글 이름이고 3글자 이상이면 첫 글자(성)를 뗌
+  const isHangul = /^[가-힣]+$/.test(n);
+  if (isHangul && n.length >= 3) return n.slice(1);
+  return n;
+}
+// 받침에 따라 "다솔이 / 서연이" 식 호칭 (받침 있으면 "이" 붙임)
+function childCall(full) {
+  const g = givenName(full);
+  if (!g) return "OO이";
+  return hasFinalConsonant(g) ? g + "이" : g;
+}
+
 function esdmForLevels(levelIds) {
   const merged = {};
   levelIds.forEach((id) => {
@@ -508,34 +525,34 @@ goals에는 위 ESDM 커리큘럼 영역(${
       ...esdmDomains.filter((d) => !domains.includes(d)),
     ];
 
-    // 영역별 목표행동: ESDM 항목을 놀잇감 활동에 녹임
+    // 영역별 목표행동: ESDM 항목을 일반 놀이 맥락으로 (놀잇감 이름은 넣지 않아 어떤 놀잇감에도 자연스럽게)
     const goalTpl = {
       수용언어: (items) =>
-        `${items.join("·")} — "${main} 줘", "여기" 등 ${wordLevel} 지시 듣고 따르기`,
+        `${items.join("·")} — "줘", "여기" 등 ${wordLevel} 지시 듣고 따르기`,
       표현언어: (items) =>
-        `${items.join("·")} — ${main} 관련 의성어·${wordLevel}로 요청·이름대기`,
+        `${items.join("·")} — 의성어·${wordLevel}로 요청하고 이름대기`,
       공동주의: (items) =>
-        `${items.join("·")} — ${main} 건네주며 눈 맞추기, 가까운 곳 가리키기`,
+        `${items.join("·")} — 함께 보며 눈 맞추기, 가까운 곳 가리키기`,
       모방: (items) =>
-        `${items.join("·")} — ${main} 다루는 동작·소리 따라 하기`,
+        `${items.join("·")} — 부모의 동작·소리 따라 하기`,
       사회기술: (items) =>
-        `${items.join("·")} — ${main} 번갈아 주고받기, 차례 지키며 함께 웃기`,
+        `${items.join("·")} — 번갈아 주고받기, 차례 지키며 함께 웃기`,
       놀이: (items) =>
-        `${items.join("·")} — ${main}으로(로) 같은 공간에서 함께·번갈아 놀기`,
+        `${items.join("·")} — 같은 공간에서 함께·번갈아 놀기`,
       인지: (items) =>
-        `${items.join("·")} — 같은 ${sub} 짝짓기, 개수·순서 다루기`,
+        `${items.join("·")} — 같은 것끼리 짝짓기, 개수·순서 다루기`,
       소근육: (items) =>
-        `${items.join("·")} — ${main} 두 손으로 잡고 조작, 작은 부분 집기`,
+        `${items.join("·")} — 손으로 집고 조작하기, 작은 부분 다루기`,
       대근육: (items) =>
-        `${items.join("·")} — 앉았다 일어나며 ${main} 옮기기, 팔 뻗어 주고받기`,
+        `${items.join("·")} — 앉았다 일어나고 팔 뻗어 주고받기`,
       자조: (items) =>
-        `${items.join("·")} — 활동 전후 ${sub} 정리·손 씻기 등 스스로 하기`,
+        `${items.join("·")} — 활동 전후 정리·손 씻기 등 스스로 하기`,
     };
     const goals = ordered.map((d) => ({
       domain: d,
       detail: goalTpl[d]
         ? goalTpl[d](esdm[d])
-        : `${esdm[d].join("·")} — ${main} 활동 중 ${d} 기회 만들기`,
+        : `${esdm[d].join("·")} — 놀이 중 ${d} 기회 만들기`,
     }));
 
     const demo = {
@@ -556,7 +573,7 @@ goals에는 위 ESDM 커리큘럼 영역(${
       },
       goals,
       theme: (() => {
-        const childTok = childName && childName.trim() ? childName.trim() : "OO이";
+        const childTok = childCall(childName);
         // 주 놀잇감 전용 장면이 있으면 사용
         const preset = TOY_SCENES[main];
         if (preset) {
@@ -587,7 +604,7 @@ goals에는 위 ESDM 커리큘럼 영역(${
             { label: "장면 1: 관심 끌기", parent: `${main}을(를) 손에 들고 "짠~! ${main} 나왔다~" 하며 ${childTok} 눈높이에서 흔들어 보여줍니다`, strategy: '쳐다보면 3~5초 기다린 뒤 건네며 교대의 첫 경험을 만듭니다. 손을 뻗으면 즉시 "줘?" 하고 언어 모델 제공' },
             { label: "장면 2: 함께 다루기", parent: `${childTok}와(과) 같이 ${main}을(를) 만지며 "${main} 만져 보자!" 하고 동작을 크게 보여줍니다`, strategy: `${childTok}의 동작을 똑같이 모방해 주며 함께 언어 모델. 같은 동작 모방으로 사회적 연결 강화` },
             { label: "장면 3: 주고받기", parent: `"엄마 줘~" 하고 손을 내밀고, 받으면 "고마워!" 하며 "이번엔 ${childTok} 줄게~" 다시 건넵니다`, strategy: `건넬 때마다 "줘", "여기" ${wordLevel} 지시를 반복. 건네면 과장된 표정으로 "우와!" 즉각 강화` },
-            { label: "장면 4: 변화 주기", parent: `${sub}을(를) 쓱 꺼내 "어? 이번엔 ${sub}이다!" 하며 놀란 표정으로 새 자극을 더합니다`, strategy: `예측을 살짝 깨뜨려 주의를 다시 모읍니다. 반응하면 ${sub}을(를) 가리키며 "여기 봐!" 공동주의 유도` },
+            { label: "장면 4: 변화 주기", parent: `${sub}을(를) 쓱 꺼내 "어? 이번엔 ${J(sub, "이다", "다")}!" 하며 놀란 표정으로 새 자극을 더합니다`, strategy: `예측을 살짝 깨뜨려 주의를 다시 모읍니다. 반응하면 ${sub}을(를) 가리키며 "여기 봐!" 공동주의 유도` },
             { label: "장면 5: 마무리 정리", parent: `"이제 쏙~ 넣자!" 하며 ${main}을(를) 통이나 상자에 넣는 동작을 보여줍니다`, strategy: '손에 쥐어 주고 통을 가리키며 "넣어" 지시. 넣으면 "다 했다!" 즉각 칭찬으로 자조·마무리' },
           ],
         };
@@ -798,6 +815,8 @@ goals에는 위 ESDM 커리큘럼 영역(${
   .scene b{display:block;}
   .arrow{margin:2px 0 2px 8px;color:${C.sub};}
   .foot{margin-top:24px;font-size:12px;color:${C.sub};text-align:center;}
+  body > div > div { break-inside: avoid; page-break-inside: avoid; }
+  @media print { body > div > div { break-inside: avoid; page-break-inside: avoid; } }
 </style></head><body>${html}
 </body></html>`);
     w.document.close();
@@ -1193,15 +1212,10 @@ goals에는 위 ESDM 커리큘럼 영역(${
             <div ref={outRef} style={styles.outBody}>
               {/* 가정 과제 헤더 */}
               <div style={styles.sheetHeader}>
-                <div style={styles.sheetBadge}>가정 놀이 과제</div>
                 <div style={styles.sheetTitle}>
-                  {childName && childName.trim()
-                    ? `${childName.trim()} 어린이`
-                    : "우리 아이"}
-                  {childAge ? ` · ${childAge}개월` : ""}
-                </div>
-                <div style={styles.sheetDate}>
-                  {new Date().toLocaleDateString("ko-KR")} 배부
+                  {givenName(childName)
+                    ? `${childCall(childName)}의 가정 놀이 과제`
+                    : "가정 놀이 과제"}
                 </div>
               </div>
 
@@ -1309,9 +1323,6 @@ goals에는 위 ESDM 커리큘럼 영역(${
               {/* 부모님 메모칸 */}
               <div style={styles.memoSection}>
                 <div style={styles.memoTitle}>가정 관찰 메모</div>
-                <div style={styles.memoSub}>
-                  집에서 해보신 모습을 적어 보내주세요.
-                </div>
                 <div style={styles.memoBox}>
                   <div style={styles.memoLine} />
                   <div style={styles.memoLine} />
@@ -2076,11 +2087,10 @@ const styles = {
   sheetBody: { padding: 20 },
   sheetHeader: {
     textAlign: "center",
-    background: "#FFF0F3",
+    background: C.brand,
     borderRadius: 14,
-    padding: "18px 16px",
+    padding: "20px 16px",
     marginBottom: 16,
-    border: "1px solid #F3D2DA",
   },
   sheetBadge: {
     display: "inline-block",
@@ -2092,7 +2102,7 @@ const styles = {
     borderRadius: 20,
     marginBottom: 8,
   },
-  sheetTitle: { fontSize: 19, fontWeight: 800, color: "#9B4257" },
+  sheetTitle: { fontSize: 20, fontWeight: 800, color: "#fff" },
   sheetDate: { fontSize: 12, color: "#B07A86", marginTop: 4 },
   sheetSec: { marginBottom: 18 },
   sheetSecTitle: {
@@ -2191,6 +2201,6 @@ const styles = {
     background: "#fff",
     borderLeft: `4px solid ${C.brand}`,
   },
-  memoTitle: { fontSize: 15, fontWeight: 800, color: C.ink },
+  memoTitle: { fontSize: 15, fontWeight: 800, color: C.ink, marginBottom: 10 },
   memoSub: { fontSize: 12, color: C.sub, margin: "3px 0 10px" },
 };
