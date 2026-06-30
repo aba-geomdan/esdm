@@ -489,7 +489,12 @@ goals에는 위 ESDM 커리큘럼 영역(${
   // 선택한 놀잇감/레벨/영역으로 형식이 동일한 샘플 JAR을 구성한다.
   function buildDemoJAR() {
     const main = toys[0] || "놀잇감";
-    const sub = toys[1] || toys[0] || "장난감";
+    // 보조 놀잇감: 두 번째 선택이 있으면 사용, 없으면 main과 겹치지 않는 기본값
+    const FALLBACK_SUBS = ["블록", "공", "컵", "인형", "자동차"];
+    const sub =
+      toys[1] && toys[1] !== main
+        ? toys[1]
+        : FALLBACK_SUBS.find((x) => x !== main) || "블록";
     const lvId = levels.slice().sort((a, b) => a - b)[0] || 1;
     const lvName = LEVELS.find((x) => x.id === lvId).name;
     const wordLevel = lvId <= 2 ? "1어절" : "2어절";
@@ -536,7 +541,9 @@ goals에는 위 ESDM 커리큘럼 영역(${
     const demo = {
       title: `${toys.slice(0, 3).join(", ")} JAR 루틴`,
       setup: {
-        materials: `${main} 1~2개, ${sub} 약간, 넓은 쟁반이나 책상, 아이와 마주 앉을 공간`,
+        materials: `${
+          toys.length > 1 ? toys.join(", ") : `${main}, ${sub}`
+        }, 넓은 쟁반이나 책상, 아이와 마주 앉을 공간`,
         arrangement: [
           "아이와 마주 보거나 옆에 앉아 쟁반을 가운데 둡니다",
           `${main}을(를) 아이 손이 닿는 곳에 두어 시선을 끕니다`,
@@ -585,16 +592,24 @@ goals에는 위 ESDM 커리큘럼 영역(${
           ],
         };
       })(),
-      variations: [
-        {
-          title: `변형1] ${sub} 주인공 바꾸기`,
-          detail: `${main} 대신 ${sub}을(를) 주인공으로 같은 주고받기 루틴 반복. 새 사물 이름을 또렷이 들려주며 어휘 확장, "또 줘" 요청 기회 늘리기`,
-        },
-        {
-          title: "변형2] 노래로 리듬 만들기",
+      variations: (() => {
+        const vs = [];
+        // 고른 보조 놀잇감마다 "주인공 바꾸기" 변형 (첫 번째 main 제외)
+        const others = toys.slice(1).filter((t) => t && t !== main);
+        const subsForVar = others.length > 0 ? others : [sub];
+        subsForVar.forEach((t, i) => {
+          vs.push({
+            title: `변형${i + 1}] ${t} 주인공 바꾸기`,
+            detail: `${main} 대신 ${t}을(를) 주인공으로 같은 주고받기 루틴 반복. 새 사물 이름을 또렷이 들려주며 어휘 확장, "또 줘" 요청 기회 늘리기`,
+          });
+        });
+        // 마지막에 노래 리듬 변형 추가
+        vs.push({
+          title: `변형${vs.length + 1}] 노래로 리듬 만들기`,
           detail: `같은 동작에 짧은 노래("주세요~ 주세요~")를 붙여 리듬으로 만듭니다. 노래를 중간에 뚝 멈추고 기다려 아이가 소리·동작으로 "더!"를 요청하게 유도`,
-        },
-      ],
+        });
+        return vs;
+      })(),
       home: {
         summary: `오늘은 ${main}을(를) 주고받으며 "줘", "더" 같은 말과 차례 지키기를 연습했어요. 집에서도 짧게, 자주 반복하면 아이가 더 편하게 표현해요.`,
         tips: [
@@ -784,7 +799,6 @@ goals에는 위 ESDM 커리큘럼 영역(${
   .arrow{margin:2px 0 2px 8px;color:${C.sub};}
   .foot{margin-top:24px;font-size:12px;color:${C.sub};text-align:center;}
 </style></head><body>${html}
-<div class="foot">© 검단ABA언어행동연구소 | 민다혜 (BCBA)<br><span style="font-size:10px;color:#999">본 자료는 검단ABA언어행동연구소의 지적재산입니다.</span></div>
 </body></html>`);
     w.document.close();
     w.focus();
@@ -1177,6 +1191,20 @@ goals에는 위 ESDM 커리큘럼 영역(${
 
           {result && (
             <div ref={outRef} style={styles.outBody}>
+              {/* 가정 과제 헤더 */}
+              <div style={styles.sheetHeader}>
+                <div style={styles.sheetBadge}>가정 놀이 과제</div>
+                <div style={styles.sheetTitle}>
+                  {childName && childName.trim()
+                    ? `${childName.trim()} 어린이`
+                    : "우리 아이"}
+                  {childAge ? ` · ${childAge}개월` : ""}
+                </div>
+                <div style={styles.sheetDate}>
+                  {new Date().toLocaleDateString("ko-KR")} 배부
+                </div>
+              </div>
+
               {/* ① 오늘의 목표 */}
               <div style={styles.stepCard}>
                 <div style={styles.stepHead}>
