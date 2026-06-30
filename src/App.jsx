@@ -11,7 +11,7 @@ import React, { useState, useRef, useEffect } from "react";
 
 const ACCESS_CODE = "esdm"; // 배포 시 원하는 코드로 변경
 
-// 놀이계획은 템플릿으로 즉시 생성 (AI/크레딧 미사용). 항상 true 유지.
+// 놀이계획 생성을 템플릿으로 (AI/크레딧 미사용). 로그인·계정·저장은 항상 Supabase 사용.
 const DEMO_MODE = true;
 
 // Supabase Edge Function URL (로그인·계정·저장에 사용. 놀이계획 생성에는 미사용)
@@ -291,7 +291,6 @@ export default function App() {
   const [copied, setCopied] = useState(false);
   const [saved, setSaved] = useState(false);
   const [myPlans, setMyPlans] = useState([]);
-  const [viewMode, setViewMode] = useState("therapist"); // 'therapist' | 'parent'
   const outRef = useRef(null);
 
   // 좁은 화면(폰)에서는 좌우 2단 → 위아래 1단으로
@@ -335,22 +334,6 @@ export default function App() {
     }
     setLoginErr("");
     setLoggingIn(true);
-
-    // 미리보기(DEMO_MODE): 백엔드 없이 아무 아이디로 입장 (관리자 데모)
-    if (DEMO_MODE) {
-      setTimeout(() => {
-        const demoUser = {
-          id: "demo",
-          name: loginId.trim() || "데모",
-          role: loginId.trim() === "admin" ? "admin" : "therapist",
-        };
-        setToken("demo-token");
-        setMe(demoUser);
-        setLoginPw("");
-        setLoggingIn(false);
-      }, 300);
-      return;
-    }
 
     try {
       const res = await fetch(RELAY_URL, {
@@ -499,7 +482,7 @@ ${esdmStr}
 
 goals에는 위 ESDM 커리큘럼 영역(${
       Object.keys(esdm).join(", ")
-    })을 우선 포함하되, 사용자가 고른 목표 영역(${domStr})을 앞쪽에 배치한다. 영역 수만큼 goals를 구성한다(최대 8개). theme.scenes는 정확히 7개로, 도입→전개→절정→마무리 흐름이 자연스럽게 이어지게 구성한다. variations는 3개로, 서로 다른 놀잇감·감각·난이도로 변주한다. home은 부모가 집에서 그대로 실천할 수 있게 따뜻하고 쉬운 말로 쓴다(전문용어 최소화). JSON만 출력한다.`;
+    })을 우선 포함하되, 사용자가 고른 목표 영역(${domStr})을 앞쪽에 배치한다. 영역 수만큼 goals를 구성한다(최대 8개). theme.scenes는 정확히 5개로, 도입→전개→핵심→변화→마무리 흐름이 자연스럽게 이어지게 구성한다. variations는 2개로, 서로 다른 놀잇감·감각·난이도로 변주한다. home은 부모가 집에서 그대로 실천할 수 있게 따뜻하고 쉬운 말로 쓴다(전문용어 최소화). JSON만 출력한다.`;
   }
 
   // 미리보기(아티팩트)에서 API 호출이 막혔을 때 쓰는 데모 생성기.
@@ -570,19 +553,24 @@ goals에는 위 ESDM 커리큘럼 영역(${
         // 주 놀잇감 전용 장면이 있으면 사용
         const preset = TOY_SCENES[main];
         if (preset) {
+          // 숙제로 주기 좋게 핵심 5장면만 (도입·전개·핵심·변화·마무리)
+          const pick = [0, 1, 2, 4, 6];
           return {
             name: preset.theme,
-            scenes: preset.scenes.map((s, i) => ({
-              label: `장면 ${i + 1}: ${s[0]}`,
-              parent: s[1]
-                .split("{main}").join(main)
-                .split("{sub}").join(sub)
-                .split("{child}").join(childTok),
-              strategy: s[2]
-                .split("{main}").join(main)
-                .split("{sub}").join(sub)
-                .split("{child}").join(childTok),
-            })),
+            scenes: pick.map((idx, i) => {
+              const s = preset.scenes[idx];
+              return {
+                label: `장면 ${i + 1}: ${s[0]}`,
+                parent: s[1]
+                  .split("{main}").join(main)
+                  .split("{sub}").join(sub)
+                  .split("{child}").join(childTok),
+                strategy: s[2]
+                  .split("{main}").join(main)
+                  .split("{sub}").join(sub)
+                  .split("{child}").join(childTok),
+              };
+            }),
           };
         }
         // 전용 장면이 없는 놀잇감: 기본 주고받기 틀
@@ -593,9 +581,7 @@ goals에는 위 ESDM 커리큘럼 영역(${
             { label: "장면 2: 함께 다루기", parent: `${childTok}와(과) 같이 ${main}을(를) 만지며 "${main} 만져 보자!" 하고 동작을 크게 보여줍니다`, strategy: `${childTok}의 동작을 똑같이 모방해 주며 함께 언어 모델. 같은 동작 모방으로 사회적 연결 강화` },
             { label: "장면 3: 주고받기", parent: `"엄마 줘~" 하고 손을 내밀고, 받으면 "고마워!" 하며 "이번엔 ${childTok} 줄게~" 다시 건넵니다`, strategy: `건넬 때마다 "줘", "여기" ${wordLevel} 지시를 반복. 건네면 과장된 표정으로 "우와!" 즉각 강화` },
             { label: "장면 4: 변화 주기", parent: `${sub}을(를) 쓱 꺼내 "어? 이번엔 ${sub}이다!" 하며 놀란 표정으로 새 자극을 더합니다`, strategy: `예측을 살짝 깨뜨려 주의를 다시 모읍니다. 반응하면 ${sub}을(를) 가리키며 "여기 봐!" 공동주의 유도` },
-            { label: "장면 5: 신나게 절정", parent: `${main}와(과) ${sub}을(를) 함께 움직이며 "슈웅~ 출발!" 하고 과장되게 "와~!" 박수칩니다`, strategy: '감정을 크게 표현해 즐거움을 공유합니다. 웃거나 소리내면 "또 할까?" 하고 3초 기다려 자발적 요청 기다리기' },
-            { label: "장면 6: 차례 지키기", parent: `"엄마 차례~" 한 번, "${childTok} 차례~" 한 번 번갈아 하며 ${main}을(를) 주고받습니다`, strategy: '"차례"를 짧은 대사로 반복. 차례를 기다리면 즉시 "잘 기다렸어!" 칭찬으로 사회기술 강화' },
-            { label: "장면 7: 마무리 정리", parent: `"이제 쏙~ 넣자!" 하며 ${main}을(를) 통이나 상자에 넣는 동작을 보여줍니다`, strategy: '손에 쥐어 주고 통을 가리키며 "넣어" 지시. 넣으면 "다 했다!" 즉각 칭찬으로 자조·마무리' },
+            { label: "장면 5: 마무리 정리", parent: `"이제 쏙~ 넣자!" 하며 ${main}을(를) 통이나 상자에 넣는 동작을 보여줍니다`, strategy: '손에 쥐어 주고 통을 가리키며 "넣어" 지시. 넣으면 "다 했다!" 즉각 칭찬으로 자조·마무리' },
           ],
         };
       })(),
@@ -607,10 +593,6 @@ goals에는 위 ESDM 커리큘럼 영역(${
         {
           title: "변형2] 노래로 리듬 만들기",
           detail: `같은 동작에 짧은 노래("주세요~ 주세요~")를 붙여 리듬으로 만듭니다. 노래를 중간에 뚝 멈추고 기다려 아이가 소리·동작으로 "더!"를 요청하게 유도`,
-        },
-        {
-          title: "변형3] 숨기고 찾기",
-          detail: `${main}을(를) 손이나 컵 뒤에 숨기고 "어디 갔지?" 하다 "여기 있네!" 하고 등장시킵니다. 사라짐·나타남의 반복으로 눈 맞춤과 기대감, "어디?" 지시 이해를 유도`,
         },
       ],
       home: {
@@ -727,7 +709,7 @@ goals에는 위 ESDM 커리큘럼 영역(${
 
   // 로그인 직후 내 저장목록 자동 로드
   useEffect(() => {
-    if (me && !DEMO_MODE) loadPlans();
+    if (me) loadPlans();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [me]);
 
@@ -764,7 +746,7 @@ goals에는 위 ESDM 커리큘럼 영역(${
       lines.push("⑤ 집에서 이어가기");
       if (r.home.summary) lines.push(r.home.summary);
       (r.home.tips || []).forEach((t) => lines.push(` - ${t}`));
-      if (r.home.watch) lines.push(`👀 ${r.home.watch}`);
+      if (r.home.watch) lines.push(r.home.watch);
     }
     lines.push("");
     lines.push("© 검단ABA언어행동연구소 | 민다혜 (BCBA)");
@@ -860,10 +842,10 @@ goals에는 위 ESDM 커리큘럼 영역(${
               <div style={styles.guideStep}>
                 <span style={styles.guideNum}>4</span>
                 <div>
-                  <div style={styles.guideStepTitle}>치료사용 / 부모 숙제지</div>
+                  <div style={styles.guideStepTitle}>결과 확인 · 가정 배부</div>
                   <div style={styles.guideStepText}>
-                    위쪽 버튼으로 전환하세요. 치료사용은 전략·목표가 보이고,
-                    부모 숙제지는 집에서 따라 할 수 있게 체크칸·메모칸이 있어요.
+                    부모 행동과 치료 전략이 함께 담긴 놀이계획이 나와요.
+                    그대로 출력해 가정 과제로 보내면 돼요.
                   </div>
                 </div>
               </div>
@@ -1134,29 +1116,6 @@ goals에는 위 ESDM 커리큘럼 영역(${
             </div>
           </div>
 
-          {result && (
-            <div style={styles.modeRow}>
-              <button
-                style={{
-                  ...styles.modeBtn,
-                  ...(viewMode === "therapist" ? styles.modeBtnOn : {}),
-                }}
-                onClick={() => setViewMode("therapist")}
-              >
-                👩‍⚕️ 치료사용
-              </button>
-              <button
-                style={{
-                  ...styles.modeBtn,
-                  ...(viewMode === "parent" ? styles.modeBtnOn : {}),
-                }}
-                onClick={() => setViewMode("parent")}
-              >
-                🏠 부모 숙제지
-              </button>
-            </div>
-          )}
-
           {copied && (
             <div style={styles.toast}>클립보드에 복사됐습니다 ✓</div>
           )}
@@ -1164,17 +1123,26 @@ goals에는 위 ESDM 커리큘럼 영역(${
             <div style={styles.toast}>저장됐습니다 ✓</div>
           )}
 
-          {/* 내 저장 목록 (결과 없을 때만 노출) */}
+          {/* 저장 목록 (결과 없을 때만 노출) */}
           {!result && !loading && myPlans.length > 0 && (
             <div style={styles.savedWrap}>
-              <div style={styles.savedHead}>내가 저장한 JAR</div>
+              <div style={styles.savedHead}>
+                {me.role === "admin"
+                  ? `전체 저장 목록 (${myPlans.length})`
+                  : "내가 저장한 놀이계획"}
+              </div>
               {myPlans.map((p) => (
                 <div key={p.id} style={styles.savedRow}>
                   <button
                     style={styles.savedOpen}
                     onClick={() => openSavedPlan(p)}
                   >
-                    <span style={styles.savedTitle}>{p.title}</span>
+                    <span style={styles.savedTitle}>
+                      {p.title}
+                      {me.role === "admin" && p.author && (
+                        <span style={styles.savedAuthor}>· {p.author}</span>
+                      )}
+                    </span>
                     <span style={styles.savedDate}>
                       {new Date(p.created_at).toLocaleDateString("ko-KR")}
                     </span>
@@ -1207,7 +1175,7 @@ goals에는 위 ESDM 커리큘럼 영역(${
             </div>
           )}
 
-          {result && viewMode === "therapist" && (
+          {result && (
             <div ref={outRef} style={styles.outBody}>
               {/* ① 오늘의 목표 */}
               <div style={styles.stepCard}>
@@ -1305,10 +1273,23 @@ goals에는 위 ESDM 커리큘럼 영역(${
                     </ul>
                   )}
                   {result.home.watch && (
-                    <p style={styles.homeWatch}>👀 {result.home.watch}</p>
+                    <p style={styles.homeWatch}>{result.home.watch}</p>
                   )}
                 </div>
               )}
+
+              {/* 부모님 메모칸 */}
+              <div style={styles.memoSection}>
+                <div style={styles.memoTitle}>가정 관찰 메모</div>
+                <div style={styles.memoSub}>
+                  집에서 해보신 모습을 적어 보내주세요.
+                </div>
+                <div style={styles.memoBox}>
+                  <div style={styles.memoLine} />
+                  <div style={styles.memoLine} />
+                  <div style={styles.memoLine} />
+                </div>
+              </div>
 
               <div style={styles.copyFoot}>
                 © 검단ABA언어행동연구소 | 민다혜 (BCBA)
@@ -1319,159 +1300,12 @@ goals에는 위 ESDM 커리큘럼 영역(${
               </div>
             </div>
           )}
-
-          {result && viewMode === "parent" && (
-            <ParentSheet
-              result={result}
-              childName={childName}
-              childAge={childAge}
-              outRef={outRef}
-            />
-          )}
         </main>
       </div>
     </div>
   );
 }
 
-// ---------- 부모 숙제지 뷰 (상세형) ----------
-function ParentSheet({ result, childName, childAge, outRef }) {
-  const days = ["월", "화", "수", "목", "금", "토", "일"];
-  const scenes = result.theme?.scenes || [];
-  const today = new Date().toLocaleDateString("ko-KR");
-
-  return (
-    <div ref={outRef} style={styles.sheetBody}>
-      {/* 헤더 */}
-      <div style={styles.sheetHeader}>
-        <div style={styles.sheetBadge}>이번 주 가정 놀이 과제</div>
-        <div style={styles.sheetTitle}>
-          {childName ? `${childName} 어린이` : "우리 아이"}
-          {childAge ? ` · ${childAge}개월` : ""}
-        </div>
-        <div style={styles.sheetDate}>{today} 배부</div>
-      </div>
-
-      {/* 이번 주 목표 */}
-      <div style={styles.sheetSec}>
-        <div style={styles.sheetSecTitle}>🎯 이번 주 목표</div>
-        <p style={styles.sheetLead}>
-          {result.home?.summary ||
-            "아이와 즐겁게 주고받으며 말과 표현을 늘려요."}
-        </p>
-      </div>
-
-      {/* 준비물 */}
-      <div style={styles.sheetSec}>
-        <div style={styles.sheetSecTitle}>🧺 준비물</div>
-        <p style={styles.sheetText}>{result.setup?.materials}</p>
-        {result.setup?.arrangement?.length > 0 && (
-          <ul style={styles.sheetUl}>
-            {result.setup.arrangement.map((a, i) => (
-              <li key={i}>{a}</li>
-            ))}
-          </ul>
-        )}
-      </div>
-
-      {/* 시작하기 */}
-      {result.setup?.approach?.length > 0 && (
-        <div style={styles.sheetSec}>
-          <div style={styles.sheetSecTitle}>🌱 이렇게 시작해요</div>
-          <ol style={styles.sheetUl}>
-            {result.setup.approach.map((a, i) => (
-              <li key={i}>{a}</li>
-            ))}
-          </ol>
-        </div>
-      )}
-
-      {/* 이렇게 놀아요 (전체 장면 + 요일 체크) */}
-      <div style={styles.sheetSec}>
-        <div style={styles.sheetSecTitle}>
-          🧩 이렇게 놀아요 — "{result.theme?.name}"
-        </div>
-        <p style={styles.sheetHint}>
-          아래 놀이를 순서대로 함께 해보세요. 한 날 한 칸씩 ✓ 표시!
-        </p>
-        {scenes.map((p, i) => (
-          <div key={i} style={styles.playCard}>
-            <div style={styles.playHead}>
-              <span style={styles.playNum}>{i + 1}</span>
-              <span style={styles.playLabel}>
-                {p.label?.replace(/^장면\s*\d+:\s*/, "") || `놀이 ${i + 1}`}
-              </span>
-            </div>
-            <div style={styles.playText}>{p.parent}</div>
-            <div style={styles.dayRow}>
-              {days.map((d) => (
-                <span key={d} style={styles.dayBox}>
-                  <span style={styles.dayLabel}>{d}</span>
-                  <span style={styles.checkBox} />
-                </span>
-              ))}
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* 다르게 놀기 */}
-      {result.variations?.length > 0 && (
-        <div style={styles.sheetSec}>
-          <div style={styles.sheetSecTitle}>🌈 아이가 익숙해지면 이렇게도</div>
-          {result.variations.map((v, i) => (
-            <div key={i} style={styles.varCard}>
-              <b style={{ color: C.brandDark }}>
-                {v.title?.replace(/^변형\d+\]\s*/, "")}
-              </b>
-              <div style={{ marginTop: 3 }}>{v.detail}</div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* 관찰 포인트 */}
-      {result.home?.watch && (
-        <div style={styles.sheetSec}>
-          <div style={styles.sheetSecTitle}>👀 이런 모습이 보이면 좋아요</div>
-          <p style={styles.sheetText}>{result.home.watch}</p>
-        </div>
-      )}
-
-      {/* 가정 팁 */}
-      {result.home?.tips?.length > 0 && (
-        <div style={styles.sheetSec}>
-          <div style={styles.sheetSecTitle}>💡 도움이 되는 팁</div>
-          <ul style={styles.sheetUl}>
-            {result.home.tips.map((t, i) => (
-              <li key={i}>{t}</li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {/* 부모 메모칸 */}
-      <div style={styles.sheetSec}>
-        <div style={styles.sheetSecTitle}>
-          ✏️ 우리 아이는 이랬어요 (부모님 메모)
-        </div>
-        <div style={styles.memoBox}>
-          <div style={styles.memoLine} />
-          <div style={styles.memoLine} />
-          <div style={styles.memoLine} />
-        </div>
-      </div>
-
-      <div style={styles.copyFoot}>
-        © 검단ABA언어행동연구소 | 민다혜 (BCBA)
-        <br />
-        <span style={styles.copyFootSmall}>
-          본 자료는 검단ABA언어행동연구소의 지적재산입니다.
-        </span>
-      </div>
-    </div>
-  );
-}
 
 function Label({ children, req }) {
   return (
@@ -1492,14 +1326,6 @@ function AdminPanel({ api, isMobile, onClose, onLogout, me }) {
   const [busy, setBusy] = useState(false);
 
   async function load() {
-    if (DEMO_MODE) {
-      setUsers([
-        { id: "demo", username: "admin", name: "민다혜", role: "admin", active: true },
-        { id: "t1", username: "minsol", name: "민다솔", role: "therapist", active: true },
-        { id: "t2", username: "choi", name: "최성현", role: "therapist", active: true },
-      ]);
-      return;
-    }
     try {
       const d = await api("listUsers");
       setUsers(d.users || []);
@@ -1519,18 +1345,6 @@ function AdminPanel({ api, isMobile, onClose, onLogout, me }) {
     }
     setBusy(true);
     setMsg("");
-    if (DEMO_MODE) {
-      setUsers((prev) => [
-        ...prev,
-        { id: "new" + Date.now(), username: nId.trim(), name: nName.trim(), role: "therapist", active: true },
-      ]);
-      setNId("");
-      setNPw("");
-      setNName("");
-      setMsg("(미리보기) 선생님 계정을 추가했습니다.");
-      setBusy(false);
-      return;
-    }
     try {
       await api("createUser", {
         username: nId.trim(),
@@ -2091,6 +1905,7 @@ const styles = {
   // saved list
   savedWrap: { padding: "16px 20px" },
   savedHead: { fontSize: 13, fontWeight: 800, color: C.ink, marginBottom: 10 },
+  savedAuthor: { fontSize: 12, color: C.brandDark, fontWeight: 600, marginLeft: 6 },
   savedRow: { display: "flex", gap: 8, marginBottom: 8, alignItems: "stretch" },
   savedOpen: {
     flex: 1,
@@ -2340,4 +2155,14 @@ const styles = {
     borderBottom: `1px dashed ${C.line}`,
     marginBottom: 8,
   },
+  memoSection: {
+    borderRadius: 14,
+    padding: "16px 18px",
+    marginBottom: 14,
+    border: `1px solid ${C.line}`,
+    background: "#fff",
+    borderLeft: `4px solid ${C.brand}`,
+  },
+  memoTitle: { fontSize: 15, fontWeight: 800, color: C.ink },
+  memoSub: { fontSize: 12, color: C.sub, margin: "3px 0 10px" },
 };
