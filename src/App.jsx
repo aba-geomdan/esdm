@@ -906,11 +906,20 @@ goals에는 위 ESDM 커리큘럼 영역(${
         if (preset) {
           // 스토리 흐름을 살려 전체 7장면 사용 (도입~마무리)
           const pick = preset.scenes.map((_, i) => i);
+          // 레벨별 코칭 한 줄 (같은 스토리라도 레벨마다 지도가 확 달라지게)
+          const levelCoach =
+            lvId <= 1
+              ? `지금은 눈맞춤·소리 모방이 목표예요. "${main}" 이름을 또렷이 들려주고, 말이 안 나와도 소리·몸짓만 보이면 바로 칭찬해 주세요.`
+              : lvId === 2
+              ? `"${main} 줘"처럼 두 낱말을 붙여 들려주고, 아이가 한 낱말이라도 말하거나 몸짓하면 즉시 반응해 주세요.`
+              : lvId === 3
+              ? `"큰 ${main} 줘"처럼 색·크기 말을 넣어 말하고, "이게 뭐야?" 같은 짧은 질문에 아이가 답하도록 기다려 주세요.`
+              : `"왜 ${main}이(가) 멈췄을까?"처럼 이유를 묻고, 지난 일·다음 일을 문장으로 이야기하도록 이끌어 주세요.`;
           return {
             name: preset.theme,
             scenes: pick.map((idx, i) => {
               const s = preset.scenes[idx];
-              // 레벨에 맞게 "언어 모델" 표현 조정 (L1 소리·몸짓 / L4 대화 확장)
+              // 레벨에 맞게 "언어 모델" 표현 조정
               const adjust = (t) => {
                 if (lvId <= 1)
                   return t
@@ -928,19 +937,14 @@ goals에는 위 ESDM 커리큘럼 영역(${
                   .split("함께 언어 모델").join("짧은 문장으로 말해 주기")
                   .split("언어 모델").join("짧은 문장으로 말해 주기"); // L3
               };
+              const fill = (t) =>
+                t.split("{main}").join(main).split("{sub}").join(sub).split("{child}").join(childTok);
               return {
                 label: `장면 ${i + 1}: ${s[0]}`,
-                parent: s[1]
-                  .split("{main}").join(main)
-                  .split("{sub}").join(sub)
-                  .split("{child}").join(childTok),
-                strategy:
-                  adjust(s[2])
-                    .split("{main}").join(main)
-                    .split("{sub}").join(sub)
-                    .split("{child}").join(childTok) +
-                  // 핵심 장면(3번째)에 레벨별 언어 자극 팁을 덧붙여 어떤 놀잇감이든 레벨 반영
-                  (i === 2 ? ` · 언어 자극은 ${langCue}` : ""),
+                parent: fill(s[1]),
+                strategy: fill(adjust(s[2])),
+                // 첫 장면에만 레벨 코칭을 붙여 반복을 줄이고, 레벨별 차이를 뚜렷하게
+                coach: i === 0 ? fill(levelCoach) : null,
               };
             }),
             songs: preset.songs || null,
@@ -951,7 +955,7 @@ goals에는 위 ESDM 커리큘럼 영역(${
         return {
           name: `${main} 주고받기 놀이`,
           scenes: [
-            { label: "장면 1: 관심 끌기", parent: `${main}을(를) 손에 들고 "짠~! ${main} 나왔다~" 하며 ${childTok} 눈높이에서 흔들어 보여줍니다`, strategy: `쳐다보면 3~5초 기다린 뒤 건네며 교대의 첫 경험을 만듭니다. 손을 뻗으면 즉시 ${modelWord}` },
+            { label: "장면 1: 관심 끌기", parent: `${main}을(를) 손에 들고 "짠~! ${main} 나왔다~" 하며 ${childTok} 눈높이에서 흔들어 보여줍니다`, strategy: `쳐다보면 3~5초 기다린 뒤 건네며 교대의 첫 경험을 만듭니다. 손을 뻗으면 즉시 ${modelWord}`, coach: lvId <= 1 ? `지금은 눈맞춤·소리 모방이 목표예요. "${main}" 이름을 또렷이 들려주고, 소리·몸짓만 보여도 바로 칭찬해 주세요.` : lvId === 2 ? `"${main} 줘"처럼 두 낱말을 붙여 들려주고, 한 낱말이라도 말하거나 몸짓하면 즉시 반응해 주세요.` : lvId === 3 ? `"큰 ${main} 줘"처럼 색·크기 말을 넣고, 짧은 질문에 아이가 답하도록 기다려 주세요.` : `"왜 ${main}이(가) 멈췄을까?"처럼 이유를 묻고, 지난 일·다음 일을 문장으로 이야기하도록 이끌어 주세요.` },
             { label: "장면 2: 함께 다루기", parent: `${childTok}와(과) 같이 ${main}을(를) 만지며 "${main} 만져 보자!" 하고 동작을 크게 보여줍니다`, strategy: `${childTok}의 동작을 똑같이 모방해 주며 ${langCue}. 같은 동작 모방으로 사회적 연결 강화` },
             { label: "장면 3: 주고받기", parent: `"엄마 줘~" 하고 손을 내밀고, 받으면 "고마워!" 하며 "이번엔 ${childTok} 줄게~" 다시 건넵니다`, strategy: `건넬 때마다 "줘", "여기" ${wordLevel} 지시를 반복. 건네면 과장된 표정으로 "우와!" 즉각 강화` },
             { label: "장면 4: 변화 주기", parent: `${sub}을(를) 쓱 꺼내 "어? 이번엔 ${J(sub, "이다", "다")}!" 하며 놀란 표정으로 새 자극을 더합니다`, strategy: `예측을 살짝 깨뜨려 주의를 다시 모읍니다. 반응하면 ${sub}을(를) 가리키며 "여기 봐!" 공동주의 유도` },
@@ -1117,6 +1121,7 @@ goals에는 위 ESDM 커리큘럼 영역(${
       lines.push(s.label);
       lines.push(`  → 부모: ${s.parent}`);
       lines.push(`  → 전략: ${s.strategy}`);
+      if (s.coach) lines.push(`  → 레벨 지도: ${s.coach}`);
     });
     lines.push("");
     lines.push("④ 다르게 놀기");
@@ -1641,6 +1646,9 @@ goals에는 위 ESDM 커리큘럼 영역(${
                     <div style={styles.sceneLabel}>{s.label}</div>
                     <div style={styles.arrow}>→ 부모: {s.parent}</div>
                     <div style={styles.arrow}>→ 전략: {s.strategy}</div>
+                    {s.coach && (
+                      <div style={styles.coachLine}>레벨 지도: {s.coach}</div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -2301,6 +2309,15 @@ const styles = {
   themeName: { fontSize: 14.5, fontWeight: 800, margin: "2px 0 12px" },
   scene: { marginBottom: 12 },
   sceneLabel: { fontSize: 13.5, fontWeight: 700, marginBottom: 3 },
+  coachLine: {
+    fontSize: 12.5,
+    color: C.brandDark,
+    background: C.brandSoft,
+    borderRadius: 8,
+    padding: "7px 10px",
+    marginTop: 6,
+    lineHeight: 1.5,
+  },
   arrow: { fontSize: 13, color: "#4A4543", marginLeft: 6, lineHeight: 1.6, marginTop: 2 },
   variation: { marginBottom: 12, fontSize: 13.5, lineHeight: 1.65 },
   copyFoot: {
