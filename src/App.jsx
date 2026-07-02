@@ -618,8 +618,9 @@ export default function App() {
   // 저장된 토큰으로 자동 로그인 복원
   useEffect(() => {
     try {
-      const t = localStorage.getItem("esdm_token");
-      const u = localStorage.getItem("esdm_user");
+      const t = sessionStorage.getItem("esdm_token");
+      const u = sessionStorage.getItem("esdm_user");
+      try { localStorage.removeItem("esdm_token"); localStorage.removeItem("esdm_user"); } catch (e) {}
       if (t && u) {
         setToken(t);
         setMe(JSON.parse(u));
@@ -665,8 +666,8 @@ export default function App() {
       setToken(data.token);
       setMe(data.user);
       try {
-        localStorage.setItem("esdm_token", data.token);
-        localStorage.setItem("esdm_user", JSON.stringify(data.user));
+        sessionStorage.setItem("esdm_token", data.token);
+        sessionStorage.setItem("esdm_user", JSON.stringify(data.user));
       } catch {}
       setLoginPw("");
     } catch {
@@ -683,6 +684,8 @@ export default function App() {
     setMyPlans([]);
     setAdminView(false);
     try {
+      sessionStorage.removeItem("esdm_token");
+      sessionStorage.removeItem("esdm_user");
       localStorage.removeItem("esdm_token");
       localStorage.removeItem("esdm_user");
     } catch {}
