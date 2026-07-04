@@ -11,8 +11,10 @@ import React, { useState, useRef, useEffect } from "react";
 
 const ACCESS_CODE = "esdm"; // 배포 시 원하는 코드로 변경
 
-// 놀이계획 생성을 템플릿으로 (AI/크레딧 미사용). 로그인·계정·저장은 항상 Supabase 사용.
-const DEMO_MODE = true;
+// 놀이계획 생성: 기본은 템플릿. 놀잇감 2개+ 조합에서 "AI로 엮기" 옵션을 켠 경우에만 AI 사용.
+// DEMO_MODE=false 여야 AI가 실제로 호출됨 (크레딧·API 키 연결 후). 단독 놀잇감은 항상 템플릿.
+// AI 실패(크레딧 소진·502 등) 시 자동으로 템플릿으로 대체되므로 빈 화면은 나오지 않음.
+const DEMO_MODE = false;
 
 // Supabase Edge Function URL (로그인·계정·저장에 사용. 놀이계획 생성에는 미사용)
 const RELAY_URL =
@@ -603,6 +605,9 @@ export default function App() {
   const [copied, setCopied] = useState(false);
   const [saved, setSaved] = useState(false);
   const [myPlans, setMyPlans] = useState([]);
+  // 놀잇감 2개 이상일 때 "AI로 하나의 이야기로 엮기" 옵션 (크레딧 필요, 실패 시 템플릿으로 자동 대체)
+  const [useAICombine, setUseAICombine] = useState(false);
+  const [aiNote, setAiNote] = useState(""); // "AI로 생성" / "AI 연결 안 돼 템플릿으로 대체" 등 안내
   const outRef = useRef(null);
 
   // 좁은 화면(폰)에서는 좌우 2단 → 위아래 1단으로
@@ -618,9 +623,8 @@ export default function App() {
   // 저장된 토큰으로 자동 로그인 복원
   useEffect(() => {
     try {
-      const t = sessionStorage.getItem("esdm_token");
-      const u = sessionStorage.getItem("esdm_user");
-      try { localStorage.removeItem("esdm_token"); localStorage.removeItem("esdm_user"); } catch (e) {}
+      const t = localStorage.getItem("esdm_token");
+      const u = localStorage.getItem("esdm_user");
       if (t && u) {
         setToken(t);
         setMe(JSON.parse(u));
@@ -666,8 +670,8 @@ export default function App() {
       setToken(data.token);
       setMe(data.user);
       try {
-        sessionStorage.setItem("esdm_token", data.token);
-        sessionStorage.setItem("esdm_user", JSON.stringify(data.user));
+        localStorage.setItem("esdm_token", data.token);
+        localStorage.setItem("esdm_user", JSON.stringify(data.user));
       } catch {}
       setLoginPw("");
     } catch {
@@ -684,8 +688,6 @@ export default function App() {
     setMyPlans([]);
     setAdminView(false);
     try {
-      sessionStorage.removeItem("esdm_token");
-      sessionStorage.removeItem("esdm_user");
       localStorage.removeItem("esdm_token");
       localStorage.removeItem("esdm_user");
     } catch {}
@@ -752,9 +754,12 @@ ${esdmStr}
 
 [작성 원칙]
 - ESDM의 공동활동루틴 구조(Setup → Theme → Variation)를 따른다.
-- 선택한 놀잇감을 자연스럽게 하나의 통합 루틴으로 엮는다.
-- 위 ESDM 커리큘럼 영역을 빠짐없이 다루되, 각 영역의 항목을 루틴 속 구체적 행동으로 녹인다.
-- 레벨에 맞는 언어 수준(1어절/2어절 등)과 발달 단계를 반영한다.
+- 선택한 놀잇감을 자연스럽게 하나의 통합 루틴으로 엮는다 (여러 놀잇감이 하나의 이야기로 이어지게).
+- theme.scenes는 정확히 7개(도입 → 전개 → 핵심 → 반전/변화 → 확장 → 차례 → 마무리)로 작성한다.
+- goals는 위 ESDM 커리큘럼 영역을 빠짐없이(8~10개) 다루되, 각 항목을 루틴 속 구체적 행동으로 녹인다.
+- 레벨에 맞는 언어 수준(1어절/2어절/문장 등)과 발달 단계를 반영한다.
+- songs 2개, closing 3개, setup.tip 1개를 반드시 채운다(빈 배열 금지).
+- 노래는 실제 가사를 그대로 옮기지 말고 '어떤 노래를 어떻게 활용하는지' 설명으로 쓴다.
 
 [말투 — 아래를 반드시 지킨다]
 1. 부모 대사에는 실제 입으로 내는 의성어·감탄을 넣는다: "부릉~ 슈웅!", "꾹꾹꾹! 산이다~", "쭉~ 떼었다!", "닦닦~ 깨끗!", "와~!" 처럼 소리와 억양이 살아 있게.
@@ -772,19 +777,22 @@ ${esdmStr}
 {
   "title": "루틴 이름 (놀잇감 기반, 짧게)",
   "setup": {
-    "materials": "준비물 한 문장",
+    "materials": "선택한 놀잇감 전부에 맞춘 준비물 한 문장",
     "arrangement": ["환경 배치 항목", "..."],
-    "approach": ["초기 접근 행동 1", "초기 접근 행동 2"]
+    "approach": ["초기 접근 행동 1", "초기 접근 행동 2"],
+    "tip": "아이가 관심 없어 하거나 힘들어할 때 부모가 쓸 수 있는 구체적 팁 1문장"
   },
   "goals": [
     {"domain": "표현언어", "detail": "구체적 목표행동"},
     {"domain": "수용언어", "detail": "..."}
   ],
   "theme": {
-    "name": "주제 이름",
+    "name": "선택한 놀잇감들을 하나로 엮은 이야기 주제 이름",
     "scenes": [
-      {"label": "장면 1: 제목", "parent": "의성어가 살아있는 부모 행동/대사", "strategy": "ABA 기법이 녹은 전략"}
-    ]
+      {"label": "장면 1: 제목", "parent": "의성어가 살아있는 부모 행동/대사", "strategy": "ABA 기법이 녹은 전략", "coach": "이 레벨 아이에게 맞는 언어 자극 수준을 부모에게 알려주는 한 문장(첫 장면에만 넣고 나머지 장면은 이 필드를 비운다)"}
+    ],
+    "songs": ["놀이에 맞는 추천 노래와 활용법 1", "추천 노래 2"],
+    "closing": ["마무리 전환 신호·정리 루틴 1", "정리 2", "다음 활동 예고 3"]
   },
   "variations": [
     {"title": "변형1] 제목", "detail": "설명"},
@@ -880,16 +888,34 @@ goals에는 위 ESDM 커리큘럼 영역(${
     }));
 
     const presetForMain = TOY_SCENES[main];
+    // 조합 준비물: 선택한 놀잇감마다 전용 준비물이 있으면 합치고, 없으면 이름만 사용
+    const buildMaterials = () => {
+      if (toys.length <= 1) {
+        return presetForMain && presetForMain.materials
+          ? presetForMain.materials
+          : `${main}, ${sub}, 넓은 쟁반이나 책상, 아이와 마주 앉을 공간`;
+      }
+      // 여러 개: 각 놀잇감 전용 준비물에서 공통 '담을 것/공간' 문구는 빼고 핵심만 모음
+      const parts = toys.map((t) => {
+        const p = TOY_SCENES[t];
+        if (!p || !p.materials) return t;
+        return p.materials
+          .replace(/,?\s*담을 [^,]+/g, "")
+          .replace(/,?\s*아이와 마주[^,]*/g, "")
+          .replace(/,?\s*(넓은 )?쟁반[^,]*/g, "")
+          .replace(/,?\s*부드러운 매트[^,]*/g, "")
+          .replace(/,?\s*안전 매트[^,]*/g, "")
+          .trim()
+          .replace(/^,|,$/g, "")
+          .trim();
+      });
+      return parts.join(" · ") + " + 담을 바구니, 아이와 마주 앉을 공간";
+    };
+
     const demo = {
       title: `${toys.slice(0, 3).join(", ")} JAR 루틴`,
       setup: {
-        materials:
-          // 놀잇감 1개이고 전용 준비물이 있으면 맞춤 준비물 사용
-          toys.length <= 1 && presetForMain && presetForMain.materials
-            ? presetForMain.materials
-            : `${
-                toys.length > 1 ? toys.join(", ") : `${main}, ${sub}`
-              }, 넓은 쟁반이나 책상, 아이와 마주 앉을 공간`,
+        materials: buildMaterials(),
         arrangement: [
           "아이와 마주 보거나 옆에 앉아 쟁반을 가운데 둡니다",
           `${main}을(를) 아이 손이 닿는 곳에 두어 시선을 끕니다`,
@@ -1023,20 +1049,24 @@ goals에는 위 ESDM 커리큘럼 영역(${
       return;
     }
     setError("");
+    setAiNote("");
     setLoading(true);
     setResult(null);
     setSaved(false);
 
-    // 미리보기(아티팩트)에서는 API 호출이 막히므로 곧장 데모로.
-    // 배포(GitHub) 시 DEMO_MODE 를 false 로 바꾸면 실제 AI 생성을 사용.
-    if (DEMO_MODE) {
+    // AI로 엮기를 쓰는 경우: 놀잇감 2개 이상 + 사용자가 옵션 켬 + DEMO_MODE 아님(=크레딧 연결됨)
+    const wantAI = useAICombine && toys.length >= 2 && !DEMO_MODE;
+
+    if (!wantAI) {
+      // 기본 경로: 템플릿 생성 (항상 안정적으로 동작, 크레딧 0)
       setTimeout(() => {
         setResult(buildDemoJAR());
         setLoading(false);
-      }, 500);
+      }, 300);
       return;
     }
 
+    // AI 경로: 조합을 하나의 이야기로 엮기. 실패하면 조용히 템플릿으로 대체.
     try {
       const data = await api("generate", { prompt: buildPrompt() });
       let text = (data.text || "").trim();
@@ -1045,10 +1075,18 @@ goals에는 위 ESDM 커리큘럼 영역(${
       const end = text.lastIndexOf("}");
       if (start !== -1 && end !== -1) text = text.slice(start, end + 1);
       const parsed = JSON.parse(text);
-      setResult(parsed);
+      // AI 결과가 최소 구조를 갖췄는지 검증 (아니면 템플릿으로)
+      if (parsed && parsed.theme && Array.isArray(parsed.theme.scenes) && parsed.theme.scenes.length) {
+        setResult(parsed);
+        setAiNote("AI가 놀잇감을 하나의 이야기로 엮어 생성했어요.");
+      } else {
+        setResult(buildDemoJAR());
+        setAiNote("AI 응답이 불완전해 템플릿으로 대체했어요.");
+      }
     } catch (e) {
-      // 생성 실패 시 데모 JAR로 대체(빈 화면 방지)
+      // 크레딧 소진·연결 실패·502 등 → 빈 화면 대신 템플릿으로 자동 대체
       setResult(buildDemoJAR());
+      setAiNote("AI 연결이 원활치 않아 템플릿으로 대체했어요. (조합은 첫 번째 놀잇감 중심)");
     } finally {
       setLoading(false);
     }
@@ -1474,6 +1512,23 @@ goals에는 위 ESDM 커리큘럼 영역(${
             })}
           </div>
 
+          {/* 놀잇감 2개 이상일 때: AI로 하나의 이야기로 엮기 옵션 */}
+          {toys.length >= 2 && (
+            <button
+              onClick={() => setUseAICombine((v) => !v)}
+              style={{
+                ...styles.aiToggle,
+                ...(useAICombine ? styles.aiToggleOn : {}),
+              }}
+            >
+              <span style={{ marginRight: 8 }}>{useAICombine ? "✓" : "＋"}</span>
+              AI로 놀잇감을 하나의 이야기로 엮기
+              {DEMO_MODE && (
+                <span style={styles.aiSoon}> (준비 중 · 크레딧 연결 후 사용)</span>
+              )}
+            </button>
+          )}
+
           <button
             style={{ ...styles.generate, ...(loading ? styles.generateOff : {}) }}
             onClick={generateJAR}
@@ -1592,6 +1647,7 @@ goals에는 위 ESDM 커리큘럼 영역(${
                     : "가정 놀이 과제"}
                 </div>
               </div>
+              {aiNote && <div style={styles.aiNote}>{aiNote}</div>}
 
               {/* ① 오늘의 목표 */}
               <div style={styles.stepCard}>
@@ -2184,6 +2240,35 @@ const styles = {
     boxShadow: "0 6px 18px rgba(217,118,66,.3)",
   },
   generateOff: { background: "#C9BCAD", boxShadow: "none", cursor: "default" },
+  aiToggle: {
+    width: "100%",
+    marginTop: 14,
+    padding: "12px 14px",
+    borderRadius: 12,
+    border: `1.5px dashed ${C.line}`,
+    background: "#fff",
+    color: C.sub,
+    fontWeight: 700,
+    fontSize: 13.5,
+    cursor: "pointer",
+    textAlign: "left",
+    lineHeight: 1.4,
+  },
+  aiToggleOn: {
+    border: `1.5px solid ${C.brand}`,
+    background: C.brandSoft,
+    color: C.brandDark,
+  },
+  aiSoon: { fontWeight: 600, fontSize: 12, color: C.sub },
+  aiNote: {
+    fontSize: 12.5,
+    color: C.brandDark,
+    background: C.brandSoft,
+    borderRadius: 10,
+    padding: "9px 12px",
+    marginBottom: 14,
+    lineHeight: 1.5,
+  },
   errBox: {
     marginTop: 12,
     fontSize: 12.5,
@@ -2519,8 +2604,7 @@ const styles = {
 
   // parent homework sheet
   sheetBody: { padding: 20 },
-  sheetHeader: {
-    textAlign: "center",
+  sheetHeader: {    textAlign: "center",
     background: C.brand,
     borderRadius: 14,
     padding: "20px 16px",
