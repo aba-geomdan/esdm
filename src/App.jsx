@@ -755,8 +755,8 @@ ${esdmStr}
 [작성 원칙]
 - ESDM의 공동활동루틴 구조(Setup → Theme → Variation)를 따른다.
 - 선택한 놀잇감을 자연스럽게 하나의 통합 루틴으로 엮는다 (여러 놀잇감이 하나의 이야기로 이어지게).
-- theme.scenes는 정확히 7개(도입 → 전개 → 핵심 → 반전/변화 → 확장 → 차례 → 마무리)로 작성한다.
-- goals는 위 ESDM 커리큘럼 영역을 빠짐없이(8~10개) 다루되, 각 항목을 루틴 속 구체적 행동으로 녹인다.
+- theme.scenes는 정확히 5개(도입 → 전개 → 핵심 → 변화 → 마무리)로 작성한다.
+- goals는 위 ESDM 커리큘럼 영역을 다루되(최대 8개), 각 항목을 루틴 속 구체적 행동으로 녹인다.
 - 레벨에 맞는 언어 수준(1어절/2어절/문장 등)과 발달 단계를 반영한다.
 - songs 2개, closing 3개, setup.tip 1개를 반드시 채운다(빈 배열 금지).
 - 노래는 실제 가사를 그대로 옮기지 말고 '어떤 노래를 어떻게 활용하는지' 설명으로 쓴다.
@@ -1039,6 +1039,63 @@ goals에는 위 ESDM 커리큘럼 영역(${
     return deepFixJosa(demo);
   }
 
+  // AI 응답 JSON 파서: 정상이면 그대로, max_tokens로 잘렸으면 열린 괄호·따옴표를 닫아 복구 시도.
+  // 복구도 실패하면 예외를 던져 호출부의 catch(→템플릿 대체)로 넘긴다.
+  function parseMaybeTruncatedJSON(s) {
+    try {
+      return JSON.parse(s);
+    } catch (_) {
+      // 잘린 응답 복구: 문자열 안/밖을 추적하며 필요한 닫힘 기호를 뒤에 붙인다.
+      let inStr = false, esc = false;
+      const stack = [];
+      let out = "";
+      for (let i = 0; i < s.length; i++) {
+        const c = s[i];
+        out += c;
+        if (inStr) {
+          if (esc) esc = false;
+          else if (c === "\\") esc = true;
+          else if (c === '"') inStr = false;
+        } else {
+          if (c === '"') inStr = true;
+          else if (c === "{" || c === "[") stack.push(c);
+          else if (c === "}" || c === "]") stack.pop();
+        }
+      }
+      // 문자열 도중 잘렸으면 우선 닫아 본다.
+      if (inStr) out += '"';
+      // 주어진 조각에 맞춰 열린 괄호를 다시 계산해 역순으로 닫는다.
+      const close = (str) => {
+        let is = false, es = false;
+        const st = [];
+        for (let i = 0; i < str.length; i++) {
+          const c = str[i];
+          if (is) { if (es) es = false; else if (c === "\\") es = true; else if (c === '"') is = false; }
+          else { if (c === '"') is = true; else if (c === "{" || c === "[") st.push(c); else if (c === "}" || c === "]") st.pop(); }
+        }
+        let r = str;
+        if (is) r += '"';
+        r = r.replace(/[,:]\s*$/, "");
+        for (let i = st.length - 1; i >= 0; i--) r += st[i] === "{" ? "}" : "]";
+        return r;
+      };
+      try {
+        return JSON.parse(close(out));
+      } catch (_2) {
+        // 1차 실패(예: 키만 있고 값이 없음) → 마지막 온전한 쉼표까지 되돌려 잘라낸다.
+        let cut = out.lastIndexOf(",");
+        while (cut > 0) {
+          try {
+            return JSON.parse(close(out.slice(0, cut)));
+          } catch (_3) {
+            cut = out.lastIndexOf(",", cut - 1);
+          }
+        }
+        throw _2; // 그래도 안 되면 템플릿 대체로 넘어간다.
+      }
+    }
+  }
+
   async function generateJAR() {
     if (levels.length === 0) {
       setError("ESDM 레벨을 1개 이상 선택해 주세요.");
@@ -1075,9 +1132,8 @@ goals에는 위 ESDM 커리큘럼 영역(${
       let text = rawText.trim();
       text = text.replace(/```json|```/g, "").trim();
       const start = text.indexOf("{");
-      const end = text.lastIndexOf("}");
-      if (start !== -1 && end !== -1) text = text.slice(start, end + 1);
-      const parsed = JSON.parse(text);
+      if (start !== -1) text = text.slice(start);
+      const parsed = parseMaybeTruncatedJSON(text);
       // AI 결과가 최소 구조를 갖췄는지 검증 (아니면 템플릿으로)
       if (parsed && parsed.theme && Array.isArray(parsed.theme.scenes) && parsed.theme.scenes.length) {
         setResult(parsed);
