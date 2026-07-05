@@ -1067,9 +1067,12 @@ goals에는 위 ESDM 커리큘럼 영역(${
     }
 
     // AI 경로: 조합을 하나의 이야기로 엮기. 실패하면 조용히 템플릿으로 대체.
+    let rawText = "";
     try {
       const data = await api("generate", { prompt: buildPrompt() });
-      let text = (data.text || "").trim();
+      rawText = data.text || "";
+      console.log("[ESDM AI 원본응답]", rawText); // 진단용: F12 → Console 에서 확인
+      let text = rawText.trim();
       text = text.replace(/```json|```/g, "").trim();
       const start = text.indexOf("{");
       const end = text.lastIndexOf("}");
@@ -1084,7 +1087,8 @@ goals에는 위 ESDM 커리큘럼 영역(${
         setAiNote("AI 응답이 불완전해 템플릿으로 대체했어요.");
       }
     } catch (e) {
-      // 크레딧 소진·연결 실패·502 등 → 빈 화면 대신 템플릿으로 자동 대체
+      // 크레딧 소진·연결 실패·502·JSON 파싱 실패 등 → 빈 화면 대신 템플릿으로 자동 대체
+      console.error("[ESDM AI 실패]", e);
       setResult(buildDemoJAR());
       setAiNote("AI 연결이 원활치 않아 템플릿으로 대체했어요. (조합은 첫 번째 놀잇감 중심)");
     } finally {
