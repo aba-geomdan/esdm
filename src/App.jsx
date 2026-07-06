@@ -1288,7 +1288,9 @@ goals는 위 ESDM 커리큘럼 영역(${
     w.document.write(`<!doctype html><html><head><meta charset="utf-8">
 <title>ESDM JAR 계획</title>
 <style>
-  body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;color:${C.ink};padding:28px 36px;line-height:1.75;word-break:keep-all;}
+  *{-webkit-print-color-adjust:exact !important;print-color-adjust:exact !important;word-break:keep-all;}
+  @page{margin:12mm;}
+  body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;color:${C.ink};padding:0;line-height:1.75;}
   .step{border-radius:12px;padding:18px 20px;margin:14px 0;border:1px solid ${C.line};}
   .step-orange{background:${C.brandSoft};}
   .step-blue{background:${C.blueSoft};}
@@ -1300,9 +1302,6 @@ goals는 위 ESDM 커리큘럼 영역(${
   .scene b{display:block;}
   .arrow{margin:2px 0 2px 8px;color:${C.sub};}
   .foot{margin-top:24px;font-size:12px;color:${C.sub};text-align:center;}
-  /* 제목: 화면과 동일한 핑크 박스로 눈에 띄게 */
-  .pdf-sheethead{background:${C.brand};color:#fff;border-radius:14px;padding:16px 20px;margin:0 0 18px;text-align:center;}
-  .pdf-sheethead > div{color:#fff !important;font-size:19px;font-weight:800;}
   /* 인쇄 시 섹션 제목이 본문에 붙는 것 방지 */
   .pdf-head{display:block !important;width:100%;margin-bottom:10px !important;}
   .pdf-theme{display:block !important;margin:2px 0 12px !important;}
