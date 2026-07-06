@@ -738,8 +738,9 @@ export default function App() {
       .map(([d, items]) => `${d}(${items.join("·")})`)
       .join(", ");
 
+    const callName = childCall(childName); // 성 뗀 호칭 (예: "민다솔"→"다솔이")
     const childLine = childName
-      ? `- 아이 이름: ${childName}${childAge ? ` (${childAge}개월)` : ""}\n  → 장면·전략의 "OO이" 자리에 실제 이름 "${childName}"을(를) 자연스럽게 넣는다.`
+      ? `- 아이 호칭: ${callName}${childAge ? ` (${childAge}개월)` : ""}\n  → 장면·전략·집에서 이어가기의 "OO이" 자리에는 반드시 이 호칭 "${callName}"만 사용한다. 성(姓)을 붙이지 말고, 다른 형태로 바꾸지 말 것.`
       : "";
 
     return `당신은 ESDM(Early Start Denver Model) 인증 치료사입니다. 아래 조건으로 가정에서 부모가 아이와 진행할 수 있는 JAR(Joint Activity Routine, 공동활동루틴) 계획을 한국어로 작성하세요.
@@ -756,7 +757,11 @@ ${esdmStr}
 - ESDM의 공동활동루틴 구조(Setup → Theme → Variation)를 따른다.
 - 선택한 놀잇감을 자연스럽게 하나의 통합 루틴으로 엮는다 (여러 놀잇감이 하나의 이야기로 이어지게).
 - theme.scenes는 정확히 5개(도입 → 전개 → 핵심 → 변화 → 마무리)로 작성한다.
-- goals는 위 ESDM 커리큘럼 영역을 다루되(최대 8개), 각 항목을 루틴 속 구체적 행동으로 녹인다.
+- goals는 위 ESDM 커리큘럼 영역을 다루되(최대 8개), 각 항목을 루틴 속 구체적 행동으로 녹인다.${
+      domains.length
+        ? `\n- 단, 사용자가 고른 목표 영역(${domStr})을 이 계획의 '중심 목표'로 삼는다: 해당 영역의 goals를 맨 앞에 2개 이상 배치하고 가장 구체적·상세하게 쓰며, scenes의 핵심 장면(전개·핵심)도 이 영역을 집중적으로 자극하도록 구성한다. 나머지 영역은 놀이에서 자연히 함께 일어나는 정도로 1개씩 간략히 포함한다.`
+        : ""
+    }
 - 레벨에 맞는 언어 수준(1어절/2어절/문장 등)과 발달 단계를 반영한다.
 - songs 2개, closing 3개, setup.tip 1개를 반드시 채운다(빈 배열 금지).
 - 노래는 실제 가사를 그대로 옮기지 말고 '어떤 노래를 어떻게 활용하는지' 설명으로 쓴다.
@@ -805,9 +810,13 @@ ${esdmStr}
   }
 }
 
-goals에는 위 ESDM 커리큘럼 영역(${
+goals는 위 ESDM 커리큘럼 영역(${
       Object.keys(esdm).join(", ")
-    })을 우선 포함하되, 사용자가 고른 목표 영역(${domStr})을 앞쪽에 배치한다. 영역 수만큼 goals를 구성한다(최대 8개). theme.scenes는 정확히 5개로, 도입→전개→핵심→변화→마무리 흐름이 자연스럽게 이어지게 구성한다. variations는 2개로, 서로 다른 놀잇감·감각·난이도로 변주한다. home은 부모가 집에서 그대로 실천할 수 있게 따뜻하고 쉬운 말로 쓴다(전문용어 최소화). JSON만 출력한다.`;
+    }) 안에서 구성하되, ${
+      domains.length
+        ? `사용자가 고른 목표 영역(${domStr})을 중심 목표로 하여 맨 앞에 상세히 배치하고, 나머지 영역은 놀이에 자연스럽게 딸려오는 만큼만 간략히 포함한다`
+        : `전 영역을 균형 있게 포함한다`
+    }(최대 8개). theme.scenes는 정확히 5개로, 도입→전개→핵심→변화→마무리 흐름이 자연스럽게 이어지게 구성한다. variations는 2개로, 서로 다른 놀잇감·감각·난이도로 변주한다. home은 부모가 집에서 그대로 실천할 수 있게 따뜻하고 쉬운 말로 쓴다(전문용어 최소화). JSON만 출력한다.`;
   }
 
   // 미리보기(아티팩트)에서 API 호출이 막혔을 때 쓰는 데모 생성기.
@@ -1133,7 +1142,7 @@ goals에는 위 ESDM 커리큘럼 영역(${
       text = text.replace(/```json|```/g, "").trim();
       const start = text.indexOf("{");
       if (start !== -1) text = text.slice(start);
-      const parsed = parseMaybeTruncatedJSON(text);
+      const parsed = deepFixJosa(parseMaybeTruncatedJSON(text));
       // AI 결과가 최소 구조를 갖췄는지 검증 (아니면 템플릿으로)
       if (parsed && parsed.theme && Array.isArray(parsed.theme.scenes) && parsed.theme.scenes.length) {
         setResult(parsed);
@@ -1287,6 +1296,9 @@ goals에는 위 ESDM 커리큘럼 영역(${
   .scene b{display:block;}
   .arrow{margin:2px 0 2px 8px;color:${C.sub};}
   .foot{margin-top:24px;font-size:12px;color:${C.sub};text-align:center;}
+  /* 인쇄 시 섹션 제목이 본문에 붙는 것 방지: 헤더를 자기 줄로 마감하고 아래 여백 확보 */
+  .pdf-head{display:block !important;width:100%;margin-bottom:10px !important;}
+  .pdf-theme{display:block !important;margin:2px 0 12px !important;}
   body > div > div { break-inside: avoid; page-break-inside: avoid; }
   @media print { body > div > div { break-inside: avoid; page-break-inside: avoid; } }
 </style></head><body>${html}
@@ -1711,7 +1723,7 @@ goals에는 위 ESDM 커리큘럼 영역(${
 
               {/* ① 오늘의 목표 */}
               <div style={styles.stepCard}>
-                <div style={styles.stepHead}>
+                <div className="pdf-head" style={styles.stepHead}>
                   <span style={styles.stepLabel}>
                     <span style={styles.stepDot}>1</span> 오늘의 목표
                   </span>
@@ -1727,7 +1739,7 @@ goals에는 위 ESDM 커리큘럼 영역(${
 
               {/* ② 놀이 준비 */}
               <div style={styles.stepCard}>
-                <div style={styles.stepHead}>
+                <div className="pdf-head" style={styles.stepHead}>
                   <span style={styles.stepLabel}>
                     <span style={styles.stepDot}>2</span> 놀이 준비
                   </span>
@@ -1754,12 +1766,12 @@ goals에는 위 ESDM 커리큘럼 영역(${
 
               {/* ③ 함께 놀기 */}
               <div style={styles.stepCard}>
-                <div style={styles.stepHead}>
+                <div className="pdf-head" style={styles.stepHead}>
                   <span style={styles.stepLabel}>
                     <span style={styles.stepDot}>3</span> 함께 놀기
                   </span>
                 </div>
-                <p style={styles.themeName}>"{result.theme?.name}"</p>
+                <p className="pdf-theme" style={styles.themeName}>"{result.theme?.name}"</p>
                 {(result.theme?.scenes || []).map((s, i) => (
                   <div key={i} style={styles.scene}>
                     <div style={styles.sceneLabel}>{s.label}</div>
@@ -1774,7 +1786,7 @@ goals에는 위 ESDM 커리큘럼 영역(${
 
               {/* ④ 다르게 놀기 */}
               <div style={styles.stepCard}>
-                <div style={styles.stepHead}>
+                <div className="pdf-head" style={styles.stepHead}>
                   <span style={styles.stepLabel}>
                     <span style={styles.stepDot}>4</span> 다르게 놀기
                   </span>
@@ -1790,7 +1802,7 @@ goals에는 위 ESDM 커리큘럼 영역(${
               {/* ⑤ 집에서 이어가기 */}
               {result.home && (
                 <div style={{ ...styles.stepCard, ...styles.stepHome }}>
-                  <div style={styles.stepHead}>
+                  <div className="pdf-head" style={styles.stepHead}>
                     <span style={styles.stepLabel}>
                       <span style={{ ...styles.stepDot, ...styles.stepDotHome }}>
                         5
@@ -1819,7 +1831,7 @@ goals에는 위 ESDM 커리큘럼 영역(${
               {/* ⑥ 추천 노래 */}
               {result.theme && result.theme.songs && result.theme.songs.length > 0 && (
                 <div style={styles.stepCard}>
-                  <div style={styles.stepHead}>
+                  <div className="pdf-head" style={styles.stepHead}>
                     <span style={styles.stepLabel}>
                       <span style={styles.stepDot}>6</span> 추천 노래
                     </span>
@@ -1837,7 +1849,7 @@ goals에는 위 ESDM 커리큘럼 영역(${
               {/* ⑦ 마무리 루틴 */}
               {result.theme && result.theme.closing && result.theme.closing.length > 0 && (
                 <div style={styles.stepCard}>
-                  <div style={styles.stepHead}>
+                  <div className="pdf-head" style={styles.stepHead}>
                     <span style={styles.stepLabel}>
                       <span style={styles.stepDot}>7</span> 마무리 루틴
                     </span>
