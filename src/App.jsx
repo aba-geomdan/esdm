@@ -1276,7 +1276,10 @@ goals는 위 ESDM 커리큘럼 영역(${
   function printPDF() {
     if (!result) return;
     if (!outRef.current) return;
-    const html = outRef.current.innerHTML;
+    // 화면 안내 문구(aiNote)는 PDF에 넣지 않는다: 복제본에서 제거 후 인쇄.
+    const clone = outRef.current.cloneNode(true);
+    clone.querySelectorAll(".pdf-ainote").forEach((el) => el.remove());
+    const html = clone.innerHTML;
     const w = window.open("", "_blank");
     if (!w) {
       setError("팝업이 차단되어 있어요. 팝업을 허용한 뒤 다시 시도해 주세요.");
@@ -1285,18 +1288,22 @@ goals는 위 ESDM 커리큘럼 영역(${
     w.document.write(`<!doctype html><html><head><meta charset="utf-8">
 <title>ESDM JAR 계획</title>
 <style>
-  body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;color:${C.ink};padding:32px;line-height:1.6;}
+  body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;color:${C.ink};padding:28px 36px;line-height:1.75;word-break:keep-all;}
   .step{border-radius:12px;padding:18px 20px;margin:14px 0;border:1px solid ${C.line};}
   .step-orange{background:${C.brandSoft};}
   .step-blue{background:${C.blueSoft};}
   .step-green{background:${C.greenSoft};}
   h3{margin:0 0 10px;font-size:16px;}
   ul{margin:6px 0;padding-left:20px;}
+  li{margin:4px 0;}
   .scene{margin:10px 0;}
   .scene b{display:block;}
   .arrow{margin:2px 0 2px 8px;color:${C.sub};}
   .foot{margin-top:24px;font-size:12px;color:${C.sub};text-align:center;}
-  /* 인쇄 시 섹션 제목이 본문에 붙는 것 방지: 헤더를 자기 줄로 마감하고 아래 여백 확보 */
+  /* 제목: 화면과 동일한 핑크 박스로 눈에 띄게 */
+  .pdf-sheethead{background:${C.brand};color:#fff;border-radius:14px;padding:16px 20px;margin:0 0 18px;text-align:center;}
+  .pdf-sheethead > div{color:#fff !important;font-size:19px;font-weight:800;}
+  /* 인쇄 시 섹션 제목이 본문에 붙는 것 방지 */
   .pdf-head{display:block !important;width:100%;margin-bottom:10px !important;}
   .pdf-theme{display:block !important;margin:2px 0 12px !important;}
   body > div > div { break-inside: avoid; page-break-inside: avoid; }
@@ -1712,14 +1719,14 @@ goals는 위 ESDM 커리큘럼 영역(${
           {result && (
             <div ref={outRef} style={styles.outBody}>
               {/* 가정 과제 헤더 */}
-              <div style={styles.sheetHeader}>
+              <div className="pdf-sheethead" style={styles.sheetHeader}>
                 <div style={styles.sheetTitle}>
                   {givenName(childName)
                     ? `${childCall(childName)}의 가정 놀이 과제`
                     : "가정 놀이 과제"}
                 </div>
               </div>
-              {aiNote && <div style={styles.aiNote}>{aiNote}</div>}
+              {aiNote && <div className="pdf-ainote" style={styles.aiNote}>{aiNote}</div>}
 
               {/* ① 오늘의 목표 */}
               <div style={styles.stepCard}>
