@@ -1135,7 +1135,7 @@ goals는 위 ESDM 커리큘럼 영역(${
     // AI 경로: 조합을 하나의 이야기로 엮기. 실패하면 조용히 템플릿으로 대체.
     let rawText = "";
     try {
-      const data = await api("generate", { prompt: buildPrompt() });
+      const data = await api("generate", { prompt: buildPrompt(), stream: false });
       rawText = data.text || "";
       console.log("[ESDM AI 원본응답]", rawText); // 진단용: F12 → Console 에서 확인
       let text = rawText.trim();
