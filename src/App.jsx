@@ -620,15 +620,18 @@ export default function App() {
     return () => window.removeEventListener("resize", onResize);
   }, []);
 
-  // 저장된 토큰으로 자동 로그인 복원
+  // 저장된 토큰으로 로그인 복원 (sessionStorage — 창 닫으면 로그아웃)
   useEffect(() => {
     try {
-      const t = localStorage.getItem("esdm_token");
-      const u = localStorage.getItem("esdm_user");
+      const t = sessionStorage.getItem("esdm_token");
+      const u = sessionStorage.getItem("esdm_user");
       if (t && u) {
         setToken(t);
         setMe(JSON.parse(u));
       }
+      // 과거 localStorage에 남아있던 자동로그인 흔적 제거 (보안)
+      localStorage.removeItem("esdm_token");
+      localStorage.removeItem("esdm_user");
     } catch {}
   }, []);
 
@@ -670,8 +673,8 @@ export default function App() {
       setToken(data.token);
       setMe(data.user);
       try {
-        localStorage.setItem("esdm_token", data.token);
-        localStorage.setItem("esdm_user", JSON.stringify(data.user));
+        sessionStorage.setItem("esdm_token", data.token);
+        sessionStorage.setItem("esdm_user", JSON.stringify(data.user));
       } catch {}
       setLoginPw("");
     } catch {
@@ -688,6 +691,8 @@ export default function App() {
     setMyPlans([]);
     setAdminView(false);
     try {
+      sessionStorage.removeItem("esdm_token");
+      sessionStorage.removeItem("esdm_user");
       localStorage.removeItem("esdm_token");
       localStorage.removeItem("esdm_user");
     } catch {}
