@@ -1387,11 +1387,17 @@ goals는 위 ESDM 커리큘럼 영역(${
               </div>
             </div>
           )}
+          {/* 브라우저 자동완성 차단용 미끼 필드 (화면에 보이지 않음) */}
+          <input type="text" name="username" tabIndex={-1} aria-hidden="true" autoComplete="username" style={{ position: "absolute", opacity: 0, height: 0, width: 0, pointerEvents: "none", zIndex: -1 }} />
+          <input type="password" name="password" tabIndex={-1} aria-hidden="true" autoComplete="current-password" style={{ position: "absolute", opacity: 0, height: 0, width: 0, pointerEvents: "none", zIndex: -1 }} />
           <input
             style={styles.gateInput}
             value={loginId}
             placeholder="아이디"
             autoCapitalize="none"
+            autoComplete="off"
+            autoCorrect="off"
+            spellCheck="false"
             onChange={(e) => setLoginId(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && doLogin()}
           />
@@ -1400,6 +1406,9 @@ goals는 위 ESDM 커리큘럼 영역(${
             type="password"
             value={loginPw}
             placeholder="비밀번호"
+            autoComplete="new-password"
+            autoCorrect="off"
+            spellCheck="false"
             onChange={(e) => setLoginPw(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && doLogin()}
           />
