@@ -43,19 +43,259 @@ const ACCESS_CODE = "esdm"; // 배포 시 원하는 코드로 변경
 // AI 실패(크레딧 소진·502 등) 시 자동으로 템플릿으로 대체되므로 빈 화면은 나오지 않음.
 const DEMO_MODE = false;
 
-// Supabase Edge Function URL (로그인·계정·저장에 사용. 놀이계획 생성에는 미사용)
-const RELAY_URL =
-  "https://vdubgrxwijydwfabwpnk.supabase.co/functions/v1/esdm-jar";
-
-// Supabase anon key (공개 가능 키 — 함수 호출 인증용)
+// =====================================================================
+// Supabase 연결 설정 (A방식: Supabase Auth + RLS + Edge Function)
+// =====================================================================
+const SUPABASE_URL = "https://vdubgrxwijydwfabwpnk.supabase.co";
+// Supabase anon key (공개 가능 키)
 const SUPABASE_ANON_KEY =
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZkdWJncnh3aWp5ZHdmYWJ3cG5rIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE2MDk1ODgsImV4cCI6MjA5NzE4NTU4OH0.nqNO3vany3M6fzmG5BG6QVdvi8BW2UbhTDhxNnwvA88";
 
-const RELAY_HEADERS = {
-  "Content-Type": "application/json",
-  Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-  apikey: SUPABASE_ANON_KEY,
-};
+// AI 놀이계획 생성 전용 릴레이 (esdm-jar 의 generate action 만 사용)
+const RELAY_URL = `${SUPABASE_URL}/functions/v1/esdm-jar`;
+
+// =====================================================================
+// Auth 세션 관리 (Supabase Auth) — SCERTS v2 패턴
+// =====================================================================
+const AUTH_SESSION_KEY = "sb-auth-session";
+
+function getStoredSession() {
+  try {
+    const raw = sessionStorage.getItem(AUTH_SESSION_KEY);
+    if (!raw) return null;
+    const s = JSON.parse(raw);
+    if (s.expires_at && s.expires_at * 1000 < Date.now() + 5 * 60 * 1000) {
+      return null; // 만료됨 (refresh 필요)
+    }
+    return s;
+  } catch (e) {
+    return null;
+  }
+}
+
+function saveSession(session) {
+  try {
+    if (session) sessionStorage.setItem(AUTH_SESSION_KEY, JSON.stringify(session));
+    else sessionStorage.removeItem(AUTH_SESSION_KEY);
+    localStorage.removeItem(AUTH_SESSION_KEY);
+  } catch (e) {}
+}
+
+async function refreshSession(refreshToken) {
+  try {
+    const r = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", apikey: SUPABASE_ANON_KEY },
+      body: JSON.stringify({ refresh_token: refreshToken }),
+    });
+    if (!r.ok) return null;
+    const data = await r.json();
+    if (data.access_token) {
+      saveSession(data);
+      return data;
+    }
+    return null;
+  } catch (e) {
+    return null;
+  }
+}
+
+async function getValidAccessToken() {
+  let session = getStoredSession();
+  if (session?.access_token) return session.access_token;
+  const raw = sessionStorage.getItem(AUTH_SESSION_KEY);
+  if (raw) {
+    try {
+      const old = JSON.parse(raw);
+      if (old.refresh_token) {
+        const refreshed = await refreshSession(old.refresh_token);
+        if (refreshed?.access_token) return refreshed.access_token;
+      }
+    } catch (e) {}
+  }
+  return null;
+}
+
+async function authHeaders() {
+  const token = await getValidAccessToken();
+  return {
+    apikey: SUPABASE_ANON_KEY,
+    Authorization: token ? `Bearer ${token}` : `Bearer ${SUPABASE_ANON_KEY}`,
+    "Content-Type": "application/json",
+  };
+}
+
+// =====================================================================
+// Auth API 함수들
+// =====================================================================
+async function signInWithPassword(email, password) {
+  try {
+    const r = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", apikey: SUPABASE_ANON_KEY },
+      body: JSON.stringify({ email, password }),
+    });
+    const data = await r.json();
+    if (!r.ok) {
+      return { error: data.error_description || data.msg || data.error || "로그인 실패" };
+    }
+    saveSession(data);
+    return { session: data, user: data.user };
+  } catch (e) {
+    return { error: "네트워크 오류: " + e.message };
+  }
+}
+
+async function signOut() {
+  try {
+    const token = await getValidAccessToken();
+    if (token) {
+      await fetch(`${SUPABASE_URL}/auth/v1/logout`, {
+        method: "POST",
+        headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}` },
+      });
+    }
+  } catch (e) {}
+  saveSession(null);
+}
+
+async function getCurrentUser() {
+  try {
+    const token = await getValidAccessToken();
+    if (!token) return null;
+    const r = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+      headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}` },
+    });
+    if (!r.ok) return null;
+    return await r.json();
+  } catch (e) {
+    return null;
+  }
+}
+
+// 관리자용: 새 유저 만들기 (공유 admin-users Edge Function)
+async function adminCreateUser(email, password, displayName) {
+  try {
+    const headers = await authHeaders();
+    const r = await fetch(`${SUPABASE_URL}/functions/v1/admin-users`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        action: "create",
+        email,
+        password,
+        display_name: displayName || email.split("@")[0],
+      }),
+    });
+    const data = await r.json();
+    if (!r.ok) return { error: data.error || "계정 생성 실패" };
+    return { user: data.user };
+  } catch (e) {
+    return { error: "네트워크 오류: " + e.message };
+  }
+}
+
+async function adminDeleteUser(userId) {
+  try {
+    const headers = await authHeaders();
+    const r = await fetch(`${SUPABASE_URL}/functions/v1/admin-users`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ action: "delete", user_id: userId }),
+    });
+    if (!r.ok) {
+      const data = await r.json().catch(() => ({}));
+      return { error: data.error || "삭제 실패" };
+    }
+    return { ok: true };
+  } catch (e) {
+    return { error: "네트워크 오류: " + e.message };
+  }
+}
+
+async function adminUpdateUserPassword(userId, newPassword) {
+  try {
+    const headers = await authHeaders();
+    const r = await fetch(`${SUPABASE_URL}/functions/v1/admin-users`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ action: "update_password", user_id: userId, password: newPassword }),
+    });
+    const data = await r.json();
+    if (!r.ok) return { error: data.error || "비번 변경 실패" };
+    return { ok: true };
+  } catch (e) {
+    return { error: "네트워크 오류: " + e.message };
+  }
+}
+
+// 관리자용: 전체 유저 목록 (공유 admin_list_users RPC)
+async function adminListUsers() {
+  try {
+    const headers = await authHeaders();
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/admin_list_users`, {
+      method: "POST",
+      headers,
+      body: "{}",
+    });
+    if (!r.ok) return [];
+    return await r.json();
+  } catch (e) {
+    return [];
+  }
+}
+
+// =====================================================================
+// JAR 저장/조회 (esdm_plans 테이블 — RLS로 본인 데이터만 접근)
+// =====================================================================
+async function plansList() {
+  try {
+    const headers = await authHeaders();
+    const user = await getCurrentUser();
+    if (!user?.id) return [];
+    const url = `${SUPABASE_URL}/rest/v1/esdm_plans?user_id=eq.${user.id}&select=id,title,levels,toys,domains,plan,created_at&order=created_at.desc`;
+    const r = await fetch(url, { headers });
+    if (!r.ok) return [];
+    return await r.json();
+  } catch (e) {
+    return [];
+  }
+}
+
+async function plansInsert({ title, levels, toys, domains, plan }) {
+  try {
+    const headers = await authHeaders();
+    const user = await getCurrentUser();
+    if (!user?.id) return { error: "로그인이 필요합니다." };
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/esdm_plans`, {
+      method: "POST",
+      headers: { ...headers, Prefer: "return=representation" },
+      body: JSON.stringify({ user_id: user.id, title, levels, toys, domains, plan }),
+    });
+    if (!r.ok) {
+      const data = await r.json().catch(() => ({}));
+      return { error: data.message || "저장 실패" };
+    }
+    const rows = await r.json();
+    return { plan: rows && rows[0] };
+  } catch (e) {
+    return { error: "네트워크 오류: " + e.message };
+  }
+}
+
+async function plansDelete(planId) {
+  try {
+    const headers = await authHeaders();
+    const user = await getCurrentUser();
+    if (!user?.id) return { error: "로그인이 필요합니다." };
+    const url = `${SUPABASE_URL}/rest/v1/esdm_plans?id=eq.${planId}&user_id=eq.${user.id}`;
+    const r = await fetch(url, { method: "DELETE", headers });
+    if (!r.ok) return { error: "삭제 실패" };
+    return { ok: true };
+  } catch (e) {
+    return { error: "네트워크 오류: " + e.message };
+  }
+}
 
 const LEVELS = [
   { id: 1, name: "레벨 1", age: "12–18개월" },
@@ -598,9 +838,9 @@ const LOGO_DATA_URL =
 
 export default function App() {
   // 로그인/계정
-  const [me, setMe] = useState(null); // {id, name, role} | null
-  const [token, setToken] = useState("");
-  const [loginId, setLoginId] = useState("");
+  const [me, setMe] = useState(null); // {id, email, name, role} | null
+  const [authLoading, setAuthLoading] = useState(true); // 세션 복원 중
+  const [loginId, setLoginId] = useState(""); // 이메일 값을 담음
   const [loginPw, setLoginPw] = useState("");
   const [loginErr, setLoginErr] = useState("");
   const [loggingIn, setLoggingIn] = useState(false);
@@ -647,27 +887,43 @@ export default function App() {
     return () => window.removeEventListener("resize", onResize);
   }, []);
 
-  // 저장된 토큰으로 로그인 복원 (sessionStorage — 창 닫으면 로그아웃)
+  // 저장된 세션으로 로그인 복원 (sessionStorage — 창 닫으면 로그아웃)
   useEffect(() => {
-    try {
-      const t = sessionStorage.getItem("esdm_token");
-      const u = sessionStorage.getItem("esdm_user");
-      if (t && u) {
-        setToken(t);
-        setMe(JSON.parse(u));
-      }
-      // 과거 localStorage에 남아있던 자동로그인 흔적 제거 (보안)
-      localStorage.removeItem("esdm_token");
-      localStorage.removeItem("esdm_user");
-    } catch {}
+    (async () => {
+      try {
+        const user = await getCurrentUser();
+        if (user?.id) {
+          const meta = user.user_metadata || {};
+          setMe({
+            id: user.id,
+            email: user.email,
+            name: meta.display_name || user.email.split("@")[0],
+            role: meta.role || "therapist",
+          });
+        }
+        // 과거 커스텀 토큰 흔적 제거 (보안)
+        sessionStorage.removeItem("esdm_token");
+        sessionStorage.removeItem("esdm_user");
+        localStorage.removeItem("esdm_token");
+        localStorage.removeItem("esdm_user");
+      } catch {}
+      setAuthLoading(false);
+    })();
   }, []);
 
-  // ---- 백엔드 호출 ----
+  // ---- AI 생성 백엔드 호출 (esdm-jar generate 전용) ----
   async function api(action, payload = {}) {
+    const accessToken = await getValidAccessToken();
     const res = await fetch(RELAY_URL, {
       method: "POST",
-      headers: RELAY_HEADERS,
-      body: JSON.stringify({ action, token, ...payload }),
+      headers: {
+        "Content-Type": "application/json",
+        apikey: SUPABASE_ANON_KEY,
+        Authorization: accessToken
+          ? `Bearer ${accessToken}`
+          : `Bearer ${SUPABASE_ANON_KEY}`,
+      },
+      body: JSON.stringify({ action, ...payload }),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "요청 실패");
@@ -675,34 +931,34 @@ export default function App() {
   }
 
   async function doLogin() {
-    if (!loginId.trim() || !loginPw) {
-      setLoginErr("아이디와 비밀번호를 입력해 주세요.");
+    const email = loginId.trim();
+    if (!email || !loginPw) {
+      setLoginErr("이메일과 비밀번호를 입력해 주세요.");
       return;
     }
     setLoginErr("");
     setLoggingIn(true);
-
     try {
-      const res = await fetch(RELAY_URL, {
-        method: "POST",
-        headers: RELAY_HEADERS,
-        body: JSON.stringify({
-          action: "login",
-          username: loginId.trim(),
-          password: loginPw,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setLoginErr(data.error || "로그인 실패");
+      const result = await signInWithPassword(email, loginPw);
+      if (result.error) {
+        const err = String(result.error).toLowerCase();
+        if (err.includes("invalid") || err.includes("credential")) {
+          setLoginErr("이메일 또는 비밀번호가 일치하지 않습니다.");
+        } else if (err.includes("not confirmed")) {
+          setLoginErr("이메일 확인이 필요합니다. 관리자에게 문의하세요.");
+        } else {
+          setLoginErr(result.error);
+        }
         return;
       }
-      setToken(data.token);
-      setMe(data.user);
-      try {
-        sessionStorage.setItem("esdm_token", data.token);
-        sessionStorage.setItem("esdm_user", JSON.stringify(data.user));
-      } catch {}
+      const user = result.user;
+      const meta = user?.user_metadata || {};
+      setMe({
+        id: user.id,
+        email: user.email,
+        name: meta.display_name || user.email.split("@")[0],
+        role: meta.role || "therapist",
+      });
       setLoginPw("");
     } catch {
       setLoginErr("서버에 연결할 수 없습니다.");
@@ -711,18 +967,14 @@ export default function App() {
     }
   }
 
-  function logout() {
+  async function logout() {
     setMe(null);
-    setToken("");
     setResult(null);
     setMyPlans([]);
     setAdminView(false);
-    try {
-      sessionStorage.removeItem("esdm_token");
-      sessionStorage.removeItem("esdm_user");
-      localStorage.removeItem("esdm_token");
-      localStorage.removeItem("esdm_user");
-    } catch {}
+    setLoginPw("");
+    setLoginErr("");
+    await signOut();
   }
 
   function toggleLevel(id) {
@@ -1193,17 +1445,21 @@ goals는 위 ESDM 커리큘럼 영역(${
     }
   }
 
-  // JAR 저장 / 내 목록 불러오기 / 삭제
+  // JAR 저장 / 내 목록 불러오기 / 삭제 (esdm_plans, RLS)
   async function savePlan() {
     if (!result) return;
     try {
-      await api("savePlan", {
+      const res = await plansInsert({
         title: result.title,
         levels,
         toys,
         domains,
         plan: { ...result, _child: { name: childName, birthDate } },
       });
+      if (res.error) {
+        setError("저장에 실패했습니다.");
+        return;
+      }
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
       loadPlans();
@@ -1213,13 +1469,14 @@ goals는 위 ESDM 커리큘럼 영역(${
   }
   async function loadPlans() {
     try {
-      const data = await api("listPlans");
-      setMyPlans(data.plans || []);
+      const rows = await plansList();
+      setMyPlans(rows || []);
     } catch {}
   }
   async function deletePlan(planId) {
     try {
-      await api("deletePlan", { planId });
+      const res = await plansDelete(planId);
+      if (res.error) return;
       setMyPlans((prev) => prev.filter((p) => p.id !== planId));
     } catch {}
   }
@@ -1346,6 +1603,15 @@ goals는 위 ESDM 커리큘럼 영역(${
     setTimeout(() => w.print(), 300);
   }
 
+  // ---------- 세션 복원 중 ----------
+  if (authLoading) {
+    return (
+      <div style={{ ...styles.gate, background: C.bg }}>
+        <div style={{ color: C.sub, fontSize: 14 }}>불러오는 중…</div>
+      </div>
+    );
+  }
+
   // ---------- 로그인 게이트 ----------
   if (!me) {
     return (
@@ -1415,7 +1681,7 @@ goals는 위 ESDM 커리큘럼 영역(${
                 </div>
               </div>
               <div style={styles.guideNote}>
-                💡 계정(아이디·비밀번호)은 관리자(원장님)에게 문의해 주세요.
+                💡 계정(이메일·비밀번호)은 관리자(원장님)에게 문의해 주세요.
               </div>
             </div>
           )}
@@ -1424,8 +1690,9 @@ goals는 위 ESDM 커리큘럼 영역(${
           <input type="password" name="password" tabIndex={-1} aria-hidden="true" autoComplete="current-password" style={{ position: "absolute", opacity: 0, height: 0, width: 0, pointerEvents: "none", zIndex: -1 }} />
           <input
             style={styles.gateInput}
+            type="email"
             value={loginId}
-            placeholder="아이디"
+            placeholder="이메일"
             autoCapitalize="none"
             autoComplete="off"
             autoCorrect="off"
@@ -1468,7 +1735,6 @@ goals는 위 ESDM 커리큘럼 영역(${
   if (me.role === "admin" && adminView) {
     return (
       <AdminPanel
-        api={api}
         isMobile={isMobile}
         onClose={() => setAdminView(false)}
         onLogout={logout}
@@ -1947,9 +2213,9 @@ function Label({ children, req }) {
 }
 
 // ---------- 관리자 계정 관리 패널 ----------
-function AdminPanel({ api, isMobile, onClose, onLogout, me }) {
+function AdminPanel({ isMobile, onClose, onLogout, me }) {
   const [users, setUsers] = useState([]);
-  const [nId, setNId] = useState("");
+  const [nEmail, setNEmail] = useState("");
   const [nPw, setNPw] = useState("");
   const [nName, setNName] = useState("");
   const [msg, setMsg] = useState("");
@@ -1957,8 +2223,8 @@ function AdminPanel({ api, isMobile, onClose, onLogout, me }) {
 
   async function load() {
     try {
-      const d = await api("listUsers");
-      setUsers(d.users || []);
+      const list = await adminListUsers();
+      setUsers(list || []);
     } catch (e) {
       setMsg("목록을 불러오지 못했습니다.");
     }
@@ -1969,48 +2235,70 @@ function AdminPanel({ api, isMobile, onClose, onLogout, me }) {
   }, []);
 
   async function addUser() {
-    if (!nId.trim() || !nPw || !nName.trim()) {
-      setMsg("아이디·비밀번호·이름을 모두 입력해 주세요.");
+    const em = nEmail.trim().toLowerCase();
+    if (!em || !nPw || !nName.trim()) {
+      setMsg("이메일·비밀번호·이름을 모두 입력해 주세요.");
+      return;
+    }
+    if (!em.includes("@")) {
+      setMsg("올바른 이메일 형식이 아닙니다.");
+      return;
+    }
+    if (nPw.length < 6) {
+      setMsg("비밀번호는 6자 이상이어야 합니다.");
       return;
     }
     setBusy(true);
     setMsg("");
-    try {
-      await api("createUser", {
-        username: nId.trim(),
-        password: nPw,
-        name: nName.trim(),
-      });
-      setNId("");
-      setNPw("");
-      setNName("");
-      setMsg("선생님 계정을 추가했습니다.");
-      load();
-    } catch (e) {
-      setMsg(String(e.message || e).includes("duplicate")
-        ? "이미 있는 아이디입니다."
-        : "추가에 실패했습니다.");
-    } finally {
+    const res = await adminCreateUser(em, nPw, nName.trim());
+    if (res.error) {
+      setMsg(
+        String(res.error).toLowerCase().includes("already")
+          ? "이미 등록된 이메일입니다."
+          : res.error
+      );
       setBusy(false);
+      return;
     }
-  }
-
-  async function toggleActive(u) {
-    try {
-      await api("setActive", { userId: u.id, active: !u.active });
-      load();
-    } catch {}
+    setNEmail("");
+    setNPw("");
+    setNName("");
+    setMsg("선생님 계정을 추가했습니다.");
+    setBusy(false);
+    load();
   }
 
   async function resetPw(u) {
-    const np = window.prompt(`${u.name} 선생님의 새 비밀번호를 입력하세요`);
+    const np = window.prompt(
+      `${u.display_name || u.email} 선생님의 새 비밀번호를 입력하세요 (6자 이상)`
+    );
     if (!np) return;
-    try {
-      await api("resetPw", { userId: u.id, password: np });
-      setMsg(`${u.name} 비밀번호를 변경했습니다.`);
-    } catch {
-      setMsg("비밀번호 변경에 실패했습니다.");
+    if (np.trim().length < 6) {
+      setMsg("비밀번호는 6자 이상이어야 합니다.");
+      return;
     }
+    const res = await adminUpdateUserPassword(u.user_id, np.trim());
+    if (res.error) {
+      setMsg("비밀번호 변경에 실패했습니다.");
+      return;
+    }
+    setMsg(`${u.display_name || u.email} 비밀번호를 변경했습니다.`);
+  }
+
+  async function removeUser(u) {
+    if (
+      !window.confirm(
+        `${u.display_name || u.email} 계정을 삭제할까요? 저장된 놀이계획도 함께 삭제됩니다.`
+      )
+    )
+      return;
+    const res = await adminDeleteUser(u.user_id);
+    if (res.error) {
+      setMsg("삭제에 실패했습니다.");
+      return;
+    }
+    setMsg("계정을 삭제했습니다.");
+    load();
   }
 
   return (
@@ -2046,23 +2334,21 @@ function AdminPanel({ api, isMobile, onClose, onLogout, me }) {
             />
             <input
               style={styles.adminInput}
-              placeholder="아이디"
+              type="email"
+              placeholder="이메일"
               autoCapitalize="none"
-              value={nId}
-              onChange={(e) => setNId(e.target.value)}
+              value={nEmail}
+              onChange={(e) => setNEmail(e.target.value)}
             />
             <input
               style={styles.adminInput}
-              placeholder="비밀번호"
+              type="password"
+              placeholder="비밀번호 (6자 이상)"
               value={nPw}
               onChange={(e) => setNPw(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && addUser()}
             />
-            <button
-              style={styles.adminAdd}
-              onClick={addUser}
-              disabled={busy}
-            >
+            <button style={styles.adminAdd} onClick={addUser} disabled={busy}>
               {busy ? "추가 중…" : "계정 추가"}
             </button>
           </div>
@@ -2073,28 +2359,23 @@ function AdminPanel({ api, isMobile, onClose, onLogout, me }) {
         <div style={styles.adminCard}>
           <div style={styles.adminCardTitle}>계정 목록 ({users.length})</div>
           {users.map((u) => (
-            <div key={u.id} style={styles.adminRow}>
+            <div key={u.user_id} style={styles.adminRow}>
               <div style={{ flex: 1 }}>
-                <span style={styles.adminName}>{u.name}</span>
-                <span style={styles.adminId}>@{u.username}</span>
+                <span style={styles.adminName}>
+                  {u.display_name || u.email.split("@")[0]}
+                </span>
+                <span style={styles.adminId}>{u.email}</span>
                 {u.role === "admin" && (
                   <span style={styles.adminTag}>관리자</span>
                 )}
-                {!u.active && <span style={styles.inactiveTag}>비활성</span>}
               </div>
               {u.role !== "admin" && (
                 <span style={{ display: "flex", gap: 6 }}>
-                  <button
-                    style={styles.miniBtn}
-                    onClick={() => resetPw(u)}
-                  >
+                  <button style={styles.miniBtn} onClick={() => resetPw(u)}>
                     비번변경
                   </button>
-                  <button
-                    style={styles.miniBtn}
-                    onClick={() => toggleActive(u)}
-                  >
-                    {u.active ? "비활성화" : "활성화"}
+                  <button style={styles.miniBtn} onClick={() => removeUser(u)}>
+                    삭제
                   </button>
                 </span>
               )}
