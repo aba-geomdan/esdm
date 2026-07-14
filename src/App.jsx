@@ -51,8 +51,8 @@ const SUPABASE_URL = "https://vdubgrxwijydwfabwpnk.supabase.co";
 const SUPABASE_ANON_KEY =
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZkdWJncnh3aWp5ZHdmYWJ3cG5rIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE2MDk1ODgsImV4cCI6MjA5NzE4NTU4OH0.nqNO3vany3M6fzmG5BG6QVdvi8BW2UbhTDhxNnwvA88";
 
-// AI 놀이계획 생성 전용 릴레이 (esdm-jar 의 generate action 만 사용)
-const RELAY_URL = `${SUPABASE_URL}/functions/v1/esdm-jar`;
+// AI 놀이계획 생성 전용 릴레이 (공용 claude-relay — BIP 등과 동일)
+const RELAY_URL = `${SUPABASE_URL}/functions/v1/claude-relay`;
 
 // =====================================================================
 // Auth 세션 관리 (Supabase Auth) — SCERTS v2 패턴
@@ -911,23 +911,66 @@ export default function App() {
     })();
   }, []);
 
-  // ---- AI 생성 백엔드 호출 (esdm-jar generate 전용) ----
+  // ---- AI 생성 백엔드 호출 (공용 claude-relay — BIP와 동일 방식) ----
+  // 로그인 토큰이 아니라 anon key 로 호출 (릴레이가 로그인 검증을 하지 않음).
+  // SSE(text/event-stream) 또는 JSON 응답 양쪽을 처리해 { text } 로 반환.
   async function api(action, payload = {}) {
-    const accessToken = await getValidAccessToken();
     const res = await fetch(RELAY_URL, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        apikey: SUPABASE_ANON_KEY,
-        Authorization: accessToken
-          ? `Bearer ${accessToken}`
-          : `Bearer ${SUPABASE_ANON_KEY}`,
+        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
       },
-      body: JSON.stringify({ action, ...payload }),
+      body: JSON.stringify({
+        prompt: payload.prompt,
+        model: "claude-sonnet-4-6",
+        max_tokens: 2500,
+        stream: false,
+      }),
     });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "요청 실패");
-    return data;
+    if (!res.ok) {
+      let msg = "AI 서버 응답 오류";
+      try {
+        const e = await res.json();
+        if (e.error) msg = e.error;
+      } catch (_) {}
+      throw new Error(msg);
+    }
+
+    const ctype = res.headers.get("content-type") || "";
+    let text = "";
+    if (ctype.includes("text/event-stream") && res.body) {
+      // SSE 스트림 파싱 (data: {type:"delta", text:"..."} 라인 이어붙임)
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let streamErr = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        let nl;
+        while ((nl = buffer.indexOf("\n")) !== -1) {
+          const line = buffer.slice(0, nl).trim();
+          buffer = buffer.slice(nl + 1);
+          if (!line.startsWith("data:")) continue;
+          const jsonStr = line.slice(5).trim();
+          if (!jsonStr) continue;
+          try {
+            const evt = JSON.parse(jsonStr);
+            if (evt.type === "delta" && evt.text) text += evt.text;
+            else if (evt.type === "error") streamErr = evt.error || "AI 스트림 오류";
+          } catch (_) {}
+        }
+      }
+      if (streamErr && !text) throw new Error(streamErr);
+    } else {
+      const data = await res.json();
+      text = Array.isArray(data.content)
+        ? data.content.filter((b) => b.type === "text").map((b) => b.text).join("\n")
+        : (data.text || "");
+    }
+    return { text };
   }
 
   async function doLogin() {
