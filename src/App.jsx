@@ -53,6 +53,9 @@ const SUPABASE_ANON_KEY =
 
 // AI 놀이계획 생성 전용 릴레이 (공용 claude-relay — BIP 등과 동일)
 const RELAY_URL = `${SUPABASE_URL}/functions/v1/claude-relay`;
+// ESDM 전용 릴레이: 프롬프트 조립을 서버(Edge Function)에서 수행.
+// 앱은 재료(levels/toys/domains/childName/childAge)만 보내고, 프롬프트는 서버에만 존재.
+const ESDM_RELAY_URL = `${SUPABASE_URL}/functions/v1/esdm-relay`;
 
 // =====================================================================
 // Auth 세션 관리 (Supabase Auth) — SCERTS v2 패턴
@@ -917,16 +920,21 @@ export default function App() {
   // SSE(text/event-stream) 또는 JSON 응답 양쪽을 처리해 { text } 로 반환.
   // onProgress(받은 글자수) 콜백으로 진행 상황을 알린다.
   async function api(action, payload = {}, onProgress) {
-    const res = await fetch(RELAY_URL, {
+    const res = await fetch(ESDM_RELAY_URL, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
       },
       body: JSON.stringify({
-        prompt: payload.prompt,
-        model: "claude-sonnet-4-6",
-        max_tokens: 4000,
+        // 프롬프트가 아니라 '재료'만 전송 — 서버가 프롬프트를 조립한다.
+        levels: payload.levels || [],
+        toys: payload.toys || [],
+        domains: payload.domains || [],
+        childName: payload.childName || "",
+        childAge: payload.childAge || "",
+        model: "claude-haiku-4-5-20251001",
+        max_tokens: 3000,
         stream: false,
       }),
     });
@@ -1526,7 +1534,7 @@ goals는 위 ESDM 커리큘럼 영역(${
     try {
       const data = await api(
         "generate",
-        { prompt: buildPrompt() },
+        { levels, toys, domains, childName, childAge },
         (n) => setGenChars(n)
       );
       rawText = data.text || "";
