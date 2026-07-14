@@ -927,7 +927,7 @@ export default function App() {
         prompt: payload.prompt,
         model: "claude-sonnet-4-6",
         max_tokens: 4000,
-        stream: true,
+        stream: false,
       }),
     });
     if (!res.ok) {
