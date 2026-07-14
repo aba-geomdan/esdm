@@ -1091,6 +1091,7 @@ ${esdmStr}
     }
 - 레벨에 맞는 언어 수준(1어절/2어절/문장 등)과 발달 단계를 반영한다.
 - songs 2개, closing 3개, setup.tip 1개를 반드시 채운다(빈 배열 금지).
+- variations(다르게 놀기) 2개와 home(집에서 이어가기)은 최상위 필드로 반드시 채운다. theme 안에 넣지 말 것. variations는 각각 title·detail 을 갖는 객체 2개, home은 summary·tips(3개)·watch 를 모두 채운다(빈 값 금지).
 - 노래는 실제 가사를 그대로 옮기지 말고 '어떤 노래를 어떻게 활용하는지' 설명으로 쓴다.
 
 [말투 — 아래를 반드시 지킨다]
@@ -1432,6 +1433,58 @@ goals는 위 ESDM 커리큘럼 영역(${
     }
   }
 
+  // AI 응답에서 variations / home 이 빠졌거나 theme 안에 잘못 들어간 경우를 보정.
+  // 위치가 어긋났으면 끌어올리고, 그래도 비면 템플릿(buildDemoJAR) 값으로 채운다.
+  function normalizeJAR(parsed) {
+    if (!parsed || typeof parsed !== "object") return parsed;
+    const r = { ...parsed };
+    const t = r.theme && typeof r.theme === "object" ? { ...r.theme } : {};
+
+    // variations: 최상위에 없거나 비었으면 theme 안에서 찾아 끌어올림
+    const isNonEmptyArr = (v) => Array.isArray(v) && v.length > 0;
+    if (!isNonEmptyArr(r.variations)) {
+      if (isNonEmptyArr(t.variations)) {
+        r.variations = t.variations;
+        delete t.variations;
+      }
+    }
+    // home: 최상위에 없으면 theme 안에서 찾아 끌어올림
+    const hasHome = (h) =>
+      h && typeof h === "object" && (h.summary || (h.tips && h.tips.length) || h.watch);
+    if (!hasHome(r.home)) {
+      if (hasHome(t.home)) {
+        r.home = t.home;
+        delete t.home;
+      }
+    }
+    r.theme = t;
+
+    // 그래도 비어 있으면 템플릿에서 같은 조건으로 생성한 값으로 채움 (절대 빈 섹션이 남지 않게)
+    if (!isNonEmptyArr(r.variations) || !hasHome(r.home)) {
+      try {
+        const demo = buildDemoJAR();
+        if (!isNonEmptyArr(r.variations) && isNonEmptyArr(demo.variations)) {
+          r.variations = demo.variations;
+        }
+        if (!hasHome(r.home) && hasHome(demo.home)) {
+          r.home = demo.home;
+        }
+      } catch (_) {}
+    }
+    // variations 항목 형식 방어: {title, detail} 아닌 경우 최대한 맞춤
+    if (Array.isArray(r.variations)) {
+      r.variations = r.variations
+        .map((v) => {
+          if (typeof v === "string") return { title: "다르게", detail: v };
+          if (v && typeof v === "object")
+            return { title: v.title || "다르게", detail: v.detail || v.text || "" };
+          return null;
+        })
+        .filter((v) => v && v.detail);
+    }
+    return r;
+  }
+
   async function generateJAR() {
     if (levels.length === 0) {
       setError("ESDM 레벨을 1개 이상 선택해 주세요.");
@@ -1470,9 +1523,11 @@ goals는 위 ESDM 커리큘럼 영역(${
       const start = text.indexOf("{");
       if (start !== -1) text = text.slice(start);
       const parsed = deepFixJosa(parseMaybeTruncatedJSON(text));
+      // variations/home 이 빠졌거나 theme 안에 잘못 들어간 경우 보정
+      const normalized = normalizeJAR(parsed);
       // AI 결과가 최소 구조를 갖췄는지 검증 (아니면 템플릿으로)
-      if (parsed && parsed.theme && Array.isArray(parsed.theme.scenes) && parsed.theme.scenes.length) {
-        setResult(parsed);
+      if (normalized && normalized.theme && Array.isArray(normalized.theme.scenes) && normalized.theme.scenes.length) {
+        setResult(normalized);
         setAiNote("AI가 놀잇감을 하나의 이야기로 엮어 생성했어요.");
       } else {
         setResult(buildDemoJAR());
