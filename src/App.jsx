@@ -867,6 +867,7 @@ export default function App() {
   })();
 
   const [loading, setLoading] = useState(false);
+  const [genChars, setGenChars] = useState(0); // AI 스트리밍 진행(받은 글자수)
   const [result, setResult] = useState(null);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
@@ -914,7 +915,8 @@ export default function App() {
   // ---- AI 생성 백엔드 호출 (공용 claude-relay — BIP와 동일 방식) ----
   // 로그인 토큰이 아니라 anon key 로 호출 (릴레이가 로그인 검증을 하지 않음).
   // SSE(text/event-stream) 또는 JSON 응답 양쪽을 처리해 { text } 로 반환.
-  async function api(action, payload = {}) {
+  // onProgress(받은 글자수) 콜백으로 진행 상황을 알린다.
+  async function api(action, payload = {}, onProgress) {
     const res = await fetch(RELAY_URL, {
       method: "POST",
       headers: {
@@ -925,7 +927,7 @@ export default function App() {
         prompt: payload.prompt,
         model: "claude-sonnet-4-6",
         max_tokens: 4000,
-        stream: false,
+        stream: true,
       }),
     });
     if (!res.ok) {
@@ -958,8 +960,14 @@ export default function App() {
           if (!jsonStr) continue;
           try {
             const evt = JSON.parse(jsonStr);
-            if (evt.type === "delta" && evt.text) text += evt.text;
-            else if (evt.type === "error") streamErr = evt.error || "AI 스트림 오류";
+            if (evt.type === "delta" && evt.text) {
+              text += evt.text;
+              if (typeof onProgress === "function") {
+                try { onProgress(text.length); } catch (_) {}
+              }
+            } else if (evt.type === "error") {
+              streamErr = evt.error || "AI 스트림 오류";
+            }
           } catch (_) {}
         }
       }
@@ -1514,8 +1522,13 @@ goals는 위 ESDM 커리큘럼 영역(${
 
     // AI 경로: 조합을 하나의 이야기로 엮기. 실패하면 조용히 템플릿으로 대체.
     let rawText = "";
+    setGenChars(0);
     try {
-      const data = await api("generate", { prompt: buildPrompt(), stream: false });
+      const data = await api(
+        "generate",
+        { prompt: buildPrompt() },
+        (n) => setGenChars(n)
+      );
       rawText = data.text || "";
       console.log("[ESDM AI 원본응답]", rawText); // 진단용: F12 → Console 에서 확인
       let text = rawText.trim();
@@ -2117,6 +2130,15 @@ goals는 위 ESDM 커리큘럼 영역(${
             <div style={styles.empty}>
               <div style={{ fontSize: 40, marginBottom: 12 }}>✏️</div>
               루틴을 구성하는 중입니다…
+              {useAICombine && toys.length >= 2 && (
+                <div style={{ fontSize: 13, color: C.sub, marginTop: 8, lineHeight: 1.5 }}>
+                  {genChars > 0
+                    ? `AI가 이야기를 쓰고 있어요… (${genChars.toLocaleString()}자)`
+                    : "AI가 놀잇감을 하나의 이야기로 엮고 있어요."}
+                  <br />
+                  20~30초쯤 걸릴 수 있어요. 잠시만 기다려 주세요 🙂
+                </div>
+              )}
             </div>
           )}
 
