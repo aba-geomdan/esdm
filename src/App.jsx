@@ -924,7 +924,7 @@ export default function App() {
       body: JSON.stringify({
         prompt: payload.prompt,
         model: "claude-sonnet-4-6",
-        max_tokens: 2500,
+        max_tokens: 4000,
         stream: false,
       }),
     });
